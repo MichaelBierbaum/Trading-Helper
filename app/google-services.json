@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "562696965761",
+    "project_id": "de-bierbaum-tradinghelper-74410",
+    "storage_bucket": "de-bierbaum-tradinghelper-74410.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:562696965761:android:7d4b988b12918914bbc780",
+        "android_client_info": {
+          "package_name": "de.bierbaum.tradinghelper"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzPyy82Wx_uYs2KuuyqaC1rqfMSkZAEas"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
