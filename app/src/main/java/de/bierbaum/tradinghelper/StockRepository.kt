@@ -127,11 +127,19 @@ class StockRepository {
             val sma50 = if (validCloses.size >= 50) {
                 validCloses.takeLast(50).average()
             } else null
+            
+            val sma10 = if (validCloses.size >= 10) {
+                validCloses.takeLast(10).average()
+            } else null
 
-            // Fetch Financials
+            // Fetch Financials and Name
+            var longName: String? = null
             val financials = try {
                 val summary = api.getQuoteSummary(symbol)
-                summary.quoteSummary.result?.firstOrNull()?.earnings?.financialsChart?.quarterly?.map {
+                val resultSummary = summary.quoteSummary.result?.firstOrNull()
+                longName = resultSummary?.price?.longName ?: resultSummary?.price?.shortName
+                
+                resultSummary?.earnings?.financialsChart?.quarterly?.map {
                     QuarterlyFinancial(
                         date = it.date,
                         revenue = it.revenue.raw,
@@ -143,14 +151,43 @@ class StockRepository {
             }
 
             Stock(
-                name = symbol,
+                name = longName ?: symbol,
                 symbol = symbol,
                 price = price,
                 sma200 = sma200,
                 sma50 = sma50,
+                sma10 = sma10,
                 historicalPrices = validCloses,
                 quarterlyFinancials = financials
             )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun fetchLogoUrl(symbol: String): String? = withContext(Dispatchers.IO) {
+        val url = "https://www.onvista.de/suche/?search=$symbol"
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            .build()
+
+        try {
+            val response = okHttpClient.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext null
+            
+            // Extract logo from class "ov-instrument-logo"
+            // Example: <img class="ov-instrument-logo" src="https://images.onvista.de/..." />
+            val logoMatch = """class="ov-instrument-logo"[^>]*src="([^"]+)"""".toRegex().find(body)
+            val extractedUrl = logoMatch?.groupValues?.get(1)
+
+            if (extractedUrl != null) {
+                if (extractedUrl.startsWith("http")) extractedUrl else "https://www.onvista.de$extractedUrl"
+            } else {
+                // Fallback heuristic if specific class not found
+                val fallbackRegex = """https://images\.onvista\.de/.*?\.png|https://images\.onvista\.de/.*?\.jpg""".toRegex()
+                fallbackRegex.find(body)?.value
+            }
         } catch (e: Exception) {
             null
         }

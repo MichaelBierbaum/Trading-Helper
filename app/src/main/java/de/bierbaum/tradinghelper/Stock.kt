@@ -1,6 +1,7 @@
 package de.bierbaum.tradinghelper
 
 import kotlinx.serialization.Serializable
+import kotlin.math.abs
 
 @Serializable
 data class QuarterlyFinancial(
@@ -18,6 +19,8 @@ data class Stock(
     val price: Double? = null,
     val sma200: Double? = null,
     val sma50: Double? = null,
+    val sma10: Double? = null,
+    val comment: String = "",
     val historicalPrices: List<Double> = emptyList(),
     val quarterlyFinancials: List<QuarterlyFinancial> = emptyList()
 ) {
@@ -31,38 +34,28 @@ data class Stock(
             ((price - sma50) / sma50) * 100
         } else null
 
+    val sma10DistancePercent: Double?
+        get() = if (price != null && sma10 != null && sma10 != 0.0) {
+            ((price - sma10) / sma10) * 100
+        } else null
+
     val isGoldenCross: Boolean
-        get() = checkCross(isGolden = true)
+        get() {
+            val d10 = sma10DistancePercent ?: return false
+            if (d10 < 0) return false
+            val d50 = sma50DistancePercent ?: return false
+            if (d50 < 0) return false
+            val d200 = sma200DistancePercent ?: return false
+            return abs(d200) <= Constants.TRESHOLD_CROSS
+        }
 
     val isDeathCross: Boolean
-        get() = checkCross(isGolden = false)
-
-    private fun checkCross(isGolden: Boolean): Boolean {
-        if (historicalPrices.size < 205) return false // Brauchen genug Daten für SMA200 + 5 Tage Puffer
-
-        val prices = historicalPrices
-        val n = prices.size
-        
-        // Aktuelle SMAs (Index n-1)
-        val currentSma50 = sma50 ?: return false
-        val currentSma200 = sma200 ?: return false
-
-        // 1. "Sehr nahe" Bedingung: Abstand < 1% des SMA200
-        val distance = Math.abs(currentSma50 - currentSma200)
-        val isClose = distance <= (currentSma200 * 0.01)
-        if (!isClose) return false
-
-        // 2. Kreuzung innerhalb der letzten 5 Handelstage
-        // Wir prüfen, ob das Vorzeichen von (SMA50 - SMA200) vor 5 Tagen anders war als heute
-        val sma50Old = prices.subList(n - 5 - 50, n - 5).average()
-        val sma200Old = prices.subList(n - 5 - 200, n - 5).average()
-
-        return if (isGolden) {
-            // Golden Cross: SMA50 war unter SMA200 und ist jetzt drüber
-            sma50Old <= sma200Old && currentSma50 > currentSma200
-        } else {
-            // Death Cross: SMA50 war über SMA200 und ist jetzt drunter
-            sma50Old >= sma200Old && currentSma50 < currentSma200
+        get() {
+            val d10 = sma10DistancePercent ?: return false
+            if (d10 > 0) return false
+            val d50 = sma50DistancePercent ?: return false
+            if (d50 > 0) return false
+            val d200 = sma200DistancePercent ?: return false
+            return abs(d200) <= Constants.TRESHOLD_CROSS
         }
-    }
 }

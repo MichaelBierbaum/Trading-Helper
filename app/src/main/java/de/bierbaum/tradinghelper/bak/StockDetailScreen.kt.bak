@@ -1,6 +1,5 @@
 package de.bierbaum.tradinghelper
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,8 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.util.Locale
@@ -69,7 +66,7 @@ fun StockDetailScreen(
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold
                 )
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // Price Chart with SMA200
@@ -112,15 +109,15 @@ fun StockChart(
     sma200Prices: List<Double?> = emptyList()
 ) {
     if (prices.size < 2) return
-    
+
     Canvas(modifier = modifier) {
         val minPrice = prices.minOrNull() ?: 0.0
         val maxPrice = prices.maxOfOrNull { it } ?: 1.0
         val range = maxPrice - minPrice
-        
+
         val width = size.width
         val height = size.height
-        
+
         val pricePath = Path()
         prices.forEachIndexed { index, price ->
             val x = index * (width / (prices.size - 1))
@@ -131,7 +128,7 @@ fun StockChart(
                 pricePath.lineTo(x, y)
             }
         }
-        
+
         drawPath(
             path = pricePath,
             color = lineColor,
@@ -167,10 +164,10 @@ fun FinancialGrowthChart(financials: List<QuarterlyFinancial>) {
     Column(modifier = Modifier.padding(vertical = 16.dp)) {
         financials.forEachIndexed { index, quarterly ->
             val prevQuarter = if (index > 0) financials[index - 1] else null
-            
+
             Column(modifier = Modifier.padding(bottom = 16.dp)) {
                 Text(text = quarterly.date, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                
+
                 // Revenue Bar & Growth
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "Rev", modifier = Modifier.width(40.dp), style = MaterialTheme.typography.labelSmall)
@@ -184,7 +181,7 @@ fun FinancialGrowthChart(financials: List<QuarterlyFinancial>) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = formatLargeNumber(quarterly.revenue), style = MaterialTheme.typography.bodySmall)
-                    
+
                     prevQuarter?.let { prev ->
                         val growth = ((quarterly.revenue - prev.revenue).toDouble() / prev.revenue) * 100
                         val color = if (growth >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
@@ -196,7 +193,7 @@ fun FinancialGrowthChart(financials: List<QuarterlyFinancial>) {
                         )
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // Earnings Bar & Growth

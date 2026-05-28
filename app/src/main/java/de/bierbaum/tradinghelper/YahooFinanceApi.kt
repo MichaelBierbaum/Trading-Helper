@@ -72,7 +72,14 @@ data class QuoteSummary(
 
 @Serializable
 data class SummaryResult(
-    val earnings: EarningsData? = null
+    val earnings: EarningsData? = null,
+    val price: PriceData? = null
+)
+
+@Serializable
+data class PriceData(
+    val longName: String? = null,
+    val shortName: String? = null
 )
 
 @Serializable
@@ -115,6 +122,6 @@ interface YahooFinanceApi {
     @GET("v11/finance/quoteSummary/{symbol}")
     suspend fun getQuoteSummary(
         @retrofit2.http.Path("symbol") symbol: String,
-        @Query("modules") modules: String = "earnings"
+        @Query("modules") modules: String = "earnings,price"
     ): YahooFinanceSummaryResponse
 }

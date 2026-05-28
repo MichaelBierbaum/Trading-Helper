@@ -9,8 +9,26 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.room.Room
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class StockExport(
+    val name: String,
+    val symbol: String,
+    val wkn: String? = null,
+    val isin: String? = null,
+    val comment: String = ""
+)
+
+@Serializable
+data class WatchlistData(
+    val stocks: List<StockExport>,
+    val logos: Map<String, String>
+)
 
 sealed interface SearchUiState {
     object Initial : SearchUiState
@@ -29,6 +47,12 @@ enum class AppScreen {
 class StockSearchViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = StockRepository()
     private val watchlistRepo = WatchlistRepository(application)
+    private val soundManager = SoundManager(application)
+    private val logoDb = Room.databaseBuilder(
+        application,
+        LogoDatabase::class.java, "logo-database"
+    ).build()
+    private val logoDao = logoDb.logoDao()
 
     private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Initial)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -42,19 +66,64 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedStock = MutableStateFlow<Stock?>(null)
     val selectedStock: StateFlow<Stock?> = _selectedStock.asStateFlow()
 
+    private val _sortOrder = MutableStateFlow(SortOrder.TITLE)
+    val sortOrder = _sortOrder.asStateFlow()
+
+    private val _filterTypes = MutableStateFlow<Set<FilterType>>(emptySet())
+    val filterTypes = _filterTypes.asStateFlow()
+
+    private val _logos = MutableStateFlow<Map<String, String>>(emptyMap())
+    val logos = _logos.asStateFlow()
+
+    enum class SortOrder {
+        TITLE, SMA10_DIST, SMA50_DIST, SMA200_DIST
+    }
+
+    enum class FilterType {
+        PRICE_GT_SMA10, PRICE_LT_SMA10, PRICE_GT_SMA50, PRICE_LT_SMA50, PRICE_GT_SMA200, PRICE_LT_SMA200
+    }
+
     init {
         viewModelScope.launch {
-            // Lade gespeicherte Watchlist
-            val savedSymbols = watchlistRepo.symbolsFlow.first()
-            if (savedSymbols.isNotEmpty()) {
-                _watchlist.value = savedSymbols.map { symbol ->
-                    Stock(name = symbol, symbol = symbol) // Platzhalter, wird gleich aktualisiert
+            // Lade Logos aus DB
+            launch {
+                logoDao.getAllLogos().collect { logoList ->
+                    _logos.value = logoList.associate { it.symbol to it.logoUrl }
                 }
+            }
+
+            // Lade gespeicherte Watchlist
+            val savedWatchlist = watchlistRepo.watchlistFlow.first()
+            if (savedWatchlist.isNotEmpty()) {
+                _watchlist.value = savedWatchlist
                 refreshWatchlist()
             }
 
-            delay(2000) // Zeige Splash für 2 Sekunden
+            delay(2000)
             _currentScreen.value = AppScreen.Watchlist
+        }
+    }
+
+    fun setSortOrder(order: SortOrder) {
+        _sortOrder.value = order
+    }
+
+    fun toggleFilterType(type: FilterType) {
+        val current = _filterTypes.value
+        _filterTypes.value = if (type in current) {
+            current - type
+        } else {
+            current + type
+        }
+    }
+
+    fun clearFilters() {
+        _filterTypes.value = emptySet()
+    }
+
+    fun updateStockComment(stock: Stock, comment: String) {
+        _watchlist.value = _watchlist.value.map {
+            if (it.symbol == stock.symbol) it.copy(comment = comment) else it
         }
     }
 
@@ -93,19 +162,35 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun exportWatchlistToJson(): String {
-        val symbols = _watchlist.value.map { it.symbol }
-        return Json.encodeToString(symbols)
+        val stockExports = _watchlist.value.map { 
+            StockExport(it.name, it.symbol, it.wkn, it.isin, it.comment) 
+        }
+        val logoData = _logos.value
+        return Json.encodeToString(WatchlistData(stockExports, logoData))
     }
 
     fun importWatchlistFromJson(jsonString: String) {
         viewModelScope.launch {
             try {
-                val symbols: List<String> = Json.decodeFromString(jsonString)
+                val data: WatchlistData = Json.decodeFromString(jsonString)
+                val stocks = data.stocks
+                val logos = data.logos
+
+                // Update Logos in DB
+                logoDao.insertLogos(logos.map { StockLogo(it.key, it.value) })
+
                 val currentSymbols = _watchlist.value.map { it.symbol }.toSet()
-                val newSymbols = symbols.filter { it !in currentSymbols }
+                val newStocks = stocks.filter { it.symbol !in currentSymbols }.map {
+                    Stock(
+                        name = it.name,
+                        symbol = it.symbol,
+                        wkn = it.wkn,
+                        isin = it.isin,
+                        comment = it.comment
+                    )
+                }
                 
-                if (newSymbols.isNotEmpty()) {
-                    val newStocks = newSymbols.map { Stock(name = it, symbol = it) }
+                if (newStocks.isNotEmpty()) {
                     _watchlist.value = _watchlist.value + newStocks
                     saveWatchlist()
                     refreshWatchlist()
@@ -118,24 +203,57 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun saveWatchlist() {
         viewModelScope.launch {
-            watchlistRepo.saveSymbols(_watchlist.value.map { it.symbol }.toSet())
+            watchlistRepo.saveWatchlist(_watchlist.value)
         }
+    }
+
+    fun playPositiveSound() {
+        soundManager.playPositive()
+    }
+
+    fun playNegativeSound() {
+        soundManager.playNegative()
     }
 
     private fun refreshWatchlist() {
         viewModelScope.launch {
             val updatedList = _watchlist.value.map { stock ->
-                repository.getStockDetails(stock.symbol)?.let { details ->
-                    stock.copy(
+                // Fetch Logo if not already present
+                if (!_logos.value.containsKey(stock.symbol)) {
+                    launch {
+                        repository.fetchLogoUrl(stock.symbol)?.let { logoUrl ->
+                            logoDao.insertLogo(StockLogo(stock.symbol, logoUrl))
+                        }
+                    }
+                }
+
+                val oldStock = _watchlist.value.find { it.symbol == stock.symbol }
+                val updatedStock = repository.getStockDetails(stock.symbol)?.let { details ->
+                    val newStock = stock.copy(
+                        name = if (details.name != details.symbol) details.name else stock.name,
                         price = details.price,
                         sma200 = details.sma200,
                         sma50 = details.sma50,
+                        sma10 = details.sma10,
                         historicalPrices = details.historicalPrices,
                         quarterlyFinancials = details.quarterlyFinancials
                     )
+                    
+                    // Trigger sounds on cross change
+                    if (oldStock != null) {
+                        if (!oldStock.isGoldenCross && newStock.isGoldenCross) {
+                            soundManager.playPositive()
+                        }
+                        if (!oldStock.isDeathCross && newStock.isDeathCross) {
+                            soundManager.playNegative()
+                        }
+                    }
+                    newStock
                 } ?: stock
+                updatedStock
             }
             _watchlist.value = updatedList
+            saveWatchlist()
         }
     }
 }
