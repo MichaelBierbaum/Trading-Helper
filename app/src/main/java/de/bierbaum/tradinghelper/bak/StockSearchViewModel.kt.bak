@@ -1,0 +1,284 @@
+package de.bierbaum.tradinghelper
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import androidx.room.Room
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class StockExport(
+    val name: String,
+    val symbol: String,
+    val wkn: String? = null,
+    val isin: String? = null,
+    val comment: String = ""
+)
+
+@Serializable
+data class WatchlistData(
+    val stocks: List<StockExport>,
+    val logos: Map<String, String>,
+    val settings: AppSettings? = null
+)
+
+sealed interface SearchUiState {
+    object Initial : SearchUiState
+    object Loading : SearchUiState
+    data class Success(val stocks: List<Stock>) : SearchUiState
+    data class Error(val message: String) : SearchUiState
+}
+
+enum class AppScreen {
+    Splash,
+    Watchlist,
+    Search,
+    Detail,
+    Settings
+}
+
+class StockSearchViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = StockRepository()
+    private val watchlistRepo = WatchlistRepository(application)
+    private val settingsManager = SettingsManager(application)
+    private val soundManager = SoundManager(application)
+    private val logoDb = Room.databaseBuilder(
+        application,
+        LogoDatabase::class.java, "logo-database"
+    ).build()
+    private val logoDao = logoDb.logoDao()
+
+    private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Initial)
+    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    private val _watchlist = MutableStateFlow<List<Stock>>(emptyList())
+    val watchlist: StateFlow<List<Stock>> = _watchlist.asStateFlow()
+
+    private val _currentScreen = MutableStateFlow(AppScreen.Splash)
+    val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
+
+    private val _selectedStock = MutableStateFlow<Stock?>(null)
+    val selectedStock: StateFlow<Stock?> = _selectedStock.asStateFlow()
+
+    private val _sortOrder = MutableStateFlow(SortOrder.TITLE)
+    val sortOrder = _sortOrder.asStateFlow()
+
+    private val _filterTypes = MutableStateFlow<Set<FilterType>>(emptySet())
+    val filterTypes = _filterTypes.asStateFlow()
+
+    private val _logos = MutableStateFlow<Map<String, String>>(emptyMap())
+    val logos = _logos.asStateFlow()
+
+    private val _settings = MutableStateFlow(AppSettings())
+    val settings = _settings.asStateFlow()
+
+    enum class SortOrder {
+        TITLE, SMA10_DIST, SMA50_DIST, SMA200_DIST
+    }
+
+    enum class FilterType {
+        PRICE_GT_SMA10, PRICE_LT_SMA10, PRICE_GT_SMA50, PRICE_LT_SMA50, PRICE_GT_SMA200, PRICE_LT_SMA200
+    }
+
+    init {
+        viewModelScope.launch {
+            // Lade Einstellungen
+            launch {
+                settingsManager.settingsFlow.collect { newSettings ->
+                    _settings.value = newSettings
+                    Constants.updateFromSettings(newSettings)
+                }
+            }
+
+            // Lade Logos aus DB
+            launch {
+                logoDao.getAllLogos().collect { logoList ->
+                    _logos.value = logoList.associate { it.symbol to it.logoUrl }
+                }
+            }
+
+            // Lade gespeicherte Watchlist
+            val savedWatchlist = watchlistRepo.watchlistFlow.first()
+            if (savedWatchlist.isNotEmpty()) {
+                _watchlist.value = savedWatchlist
+                refreshWatchlist()
+            }
+
+            delay(2000)
+            _currentScreen.value = AppScreen.Watchlist
+        }
+    }
+
+    fun setSortOrder(order: SortOrder) {
+        _sortOrder.value = order
+    }
+
+    fun toggleFilterType(type: FilterType) {
+        val current = _filterTypes.value
+        _filterTypes.value = if (type in current) {
+            current - type
+        } else {
+            current + type
+        }
+    }
+
+    fun clearFilters() {
+        _filterTypes.value = emptySet()
+    }
+
+    fun updateStockComment(stock: Stock, comment: String) {
+        _watchlist.value = _watchlist.value.map {
+            if (it.symbol == stock.symbol) it.copy(comment = comment) else it
+        }
+    }
+
+    fun navigateTo(screen: AppScreen, stock: Stock? = null) {
+        _selectedStock.value = stock
+        _currentScreen.value = screen
+        if (screen == AppScreen.Watchlist) {
+            refreshWatchlist()
+        }
+    }
+
+    fun searchStocks(query: String) {
+        if (query.isBlank()) {
+            _uiState.value = SearchUiState.Initial
+            return
+        }
+
+        _uiState.value = SearchUiState.Loading
+        viewModelScope.launch {
+            val results = repository.searchStocks(query)
+            _uiState.value = SearchUiState.Success(results)
+        }
+    }
+
+    fun addToWatchlist(stock: Stock) {
+        if (!_watchlist.value.any { it.symbol == stock.symbol }) {
+            _watchlist.value = _watchlist.value + stock
+            saveWatchlist()
+            refreshWatchlist()
+        }
+    }
+
+    fun removeFromWatchlist(stock: Stock) {
+        _watchlist.value = _watchlist.value.filter { it.symbol != stock.symbol }
+        saveWatchlist()
+    }
+
+    fun updateSettings(newSettings: AppSettings) {
+        viewModelScope.launch {
+            settingsManager.updateSettings(newSettings)
+        }
+    }
+
+    fun exportWatchlistToJson(): String {
+        val stockExports = _watchlist.value.map {
+            StockExport(it.name, it.symbol, it.wkn, it.isin, it.comment)
+        }
+        val logoData = _logos.value
+        val settingsData = _settings.value
+        return Json.encodeToString(WatchlistData(stockExports, logoData, settingsData))
+    }
+
+    fun importWatchlistFromJson(jsonString: String) {
+        viewModelScope.launch {
+            try {
+                val data: WatchlistData = Json.decodeFromString(jsonString)
+                val stocks = data.stocks
+                val logos = data.logos
+                val settings = data.settings
+
+                // Update Settings if present
+                settings?.let { updateSettings(it) }
+
+                // Update Logos in DB
+                logoDao.insertLogos(logos.map { StockLogo(it.key, it.value) })
+
+                val currentSymbols = _watchlist.value.map { it.symbol }.toSet()
+                val newStocks = stocks.filter { it.symbol !in currentSymbols }.map {
+                    Stock(
+                        name = it.name,
+                        symbol = it.symbol,
+                        wkn = it.wkn,
+                        isin = it.isin,
+                        comment = it.comment
+                    )
+                }
+
+                if (newStocks.isNotEmpty()) {
+                    _watchlist.value = _watchlist.value + newStocks
+                    saveWatchlist()
+                    refreshWatchlist()
+                }
+            } catch (e: Exception) {
+                println("Import error: ${e.message}")
+            }
+        }
+    }
+
+    private fun saveWatchlist() {
+        viewModelScope.launch {
+            watchlistRepo.saveWatchlist(_watchlist.value)
+        }
+    }
+
+    fun playPositiveSound() {
+        soundManager.playPositive()
+    }
+
+    fun playNegativeSound() {
+        soundManager.playNegative()
+    }
+
+    private fun refreshWatchlist() {
+        viewModelScope.launch {
+            val updatedList = _watchlist.value.map { stock ->
+                // Fetch Logo if not already present
+                if (!_logos.value.containsKey(stock.symbol)) {
+                    launch {
+                        repository.fetchLogoUrl(stock.symbol)?.let { logoUrl ->
+                            logoDao.insertLogo(StockLogo(stock.symbol, logoUrl))
+                        }
+                    }
+                }
+
+                val oldStock = _watchlist.value.find { it.symbol == stock.symbol }
+                val updatedStock = repository.getStockDetails(stock.symbol)?.let { details ->
+                    val newStock = stock.copy(
+                        name = if (details.name != details.symbol) details.name else stock.name,
+                        price = details.price,
+                        sma200 = details.sma200,
+                        sma50 = details.sma50,
+                        sma10 = details.sma10,
+                        historicalPrices = details.historicalPrices,
+                        quarterlyFinancials = details.quarterlyFinancials
+                    )
+
+                    // Trigger sounds on cross change
+                    if (oldStock != null) {
+                        if (!oldStock.isGoldenCross && newStock.isGoldenCross) {
+                            soundManager.playPositive()
+                        }
+                        if (!oldStock.isDeathCross && newStock.isDeathCross) {
+                            soundManager.playNegative()
+                        }
+                    }
+                    newStock
+                } ?: stock
+                updatedStock
+            }
+            _watchlist.value = updatedList
+            saveWatchlist()
+        }
+    }
+}

@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
                         AppScreen.Watchlist -> WatchlistScreen(viewModel)
                         AppScreen.Search -> StockSearchScreen(viewModel)
                         AppScreen.Detail -> StockDetailScreen(viewModel)
+                        AppScreen.Settings -> SettingsScreen(viewModel)
                     }
                 }
             }

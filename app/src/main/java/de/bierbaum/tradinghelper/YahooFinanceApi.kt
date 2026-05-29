@@ -33,6 +33,7 @@ data class ChartData(
 @Serializable
 data class ChartResult(
     val meta: ChartMeta,
+    val timestamp: List<Long>? = null,
     val indicators: ChartIndicators
 )
 
@@ -40,7 +41,8 @@ data class ChartResult(
 data class ChartMeta(
     val symbol: String,
     val regularMarketPrice: Double? = null,
-    val previousClose: Double? = null
+    val previousClose: Double? = null,
+    val currency: String? = null
 )
 
 @Serializable
@@ -73,7 +75,34 @@ data class QuoteSummary(
 @Serializable
 data class SummaryResult(
     val earnings: EarningsData? = null,
-    val price: PriceData? = null
+    val price: PriceData? = null,
+    val defaultKeyStatistics: KeyStatistics? = null,
+    val summaryDetail: SummaryDetail? = null,
+    val assetProfile: AssetProfile? = null
+)
+
+@Serializable
+data class AssetProfile(
+    val sector: String? = null,
+    val industry: String? = null
+)
+
+@Serializable
+data class KeyStatistics(
+    val beta: DoubleRaw? = null,
+    val forwardPE: DoubleRaw? = null
+)
+
+@Serializable
+data class SummaryDetail(
+    val trailingPE: DoubleRaw? = null,
+    val forwardPE: DoubleRaw? = null
+)
+
+@Serializable
+data class DoubleRaw(
+    val raw: Double,
+    val fmt: String? = null
 )
 
 @Serializable
@@ -122,6 +151,6 @@ interface YahooFinanceApi {
     @GET("v11/finance/quoteSummary/{symbol}")
     suspend fun getQuoteSummary(
         @retrofit2.http.Path("symbol") symbol: String,
-        @Query("modules") modules: String = "earnings,price"
+        @Query("modules") modules: String = "earnings,price,defaultKeyStatistics,summaryDetail,assetProfile"
     ): YahooFinanceSummaryResponse
 }

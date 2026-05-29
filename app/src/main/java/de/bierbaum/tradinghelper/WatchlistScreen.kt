@@ -30,7 +30,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import kotlin.math.abs
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -43,13 +42,14 @@ fun WatchlistScreen(
     val rawWatchlist by viewModel.watchlist.collectAsState()
     val sortOrder by viewModel.sortOrder.collectAsState()
     val filterTypes by viewModel.filterTypes.collectAsState()
-    val logos by viewModel.logos.collectAsState()
+    val filterSegments by viewModel.filterSegments.collectAsState()
+    val availableSegments by viewModel.availableSegments.collectAsState()
     val context = LocalContext.current
 
     // Filtering & Sorting
-    val watchlist = remember(rawWatchlist, sortOrder, filterTypes) {
+    val watchlist = remember(rawWatchlist, sortOrder, filterTypes, filterSegments) {
         rawWatchlist.filter { stock ->
-            if (filterTypes.isEmpty()) true
+            val matchesTypes = if (filterTypes.isEmpty()) true
             else {
                 filterTypes.all { filter ->
                     when (filter) {
@@ -62,6 +62,13 @@ fun WatchlistScreen(
                     }
                 }
             }
+            
+            val matchesSegments = if (filterSegments.isEmpty()) true
+            else {
+                filterSegments.any { it in stock.segments }
+            }
+            
+            matchesTypes && matchesSegments
         }.sortedWith { a, b ->
             when (sortOrder) {
                 StockSearchViewModel.SortOrder.TITLE -> a.name.compareTo(b.name)
@@ -72,12 +79,40 @@ fun WatchlistScreen(
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(
+    var showSortMenu by remember { mutableStateOf(false) }
+    var showFilterMenu by remember { mutableStateOf(false) }
+    var showExportMenu by remember { mutableStateOf(false) }
+    var segmentsStock by remember { mutableStateOf<Stock?>(null) }
+    
+    var pendingImportJson by remember { mutableStateOf<String?>(null) }
+    var showImportDialog by remember { mutableStateOf(false) }
+
+    val exportWatchlistLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let {
             context.contentResolver.openOutputStream(it)?.use { stream ->
-                stream.write(viewModel.exportWatchlistToJson().toByteArray())
+                stream.write(viewModel.exportWatchlistOnlyToJson().toByteArray())
+            }
+        }
+    }
+
+    val exportSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.use { stream ->
+                stream.write(viewModel.exportSettingsOnlyToJson().toByteArray())
+            }
+        }
+    }
+
+    val exportAllLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.use { stream ->
+                stream.write(viewModel.exportAllToJson().toByteArray())
             }
         }
     }
@@ -88,20 +123,20 @@ fun WatchlistScreen(
         uri?.let {
             context.contentResolver.openInputStream(it)?.use { stream ->
                 val json = stream.bufferedReader().readText()
-                viewModel.importWatchlistFromJson(json)
+                pendingImportJson = json
+                showImportDialog = true
             }
         }
     }
-
-    var showSortMenu by remember { mutableStateOf(false) }
-    var showFilterMenu by remember { mutableStateOf(false) }
-    var commentStock by remember { mutableStateOf<Stock?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = { viewModel.navigateTo(AppScreen.Settings) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
+                    }
                     IconButton(onClick = { showFilterMenu = true }) {
                         Icon(Icons.Default.FilterList, contentDescription = "Filtern")
                     }
@@ -109,10 +144,25 @@ fun WatchlistScreen(
                         Icon(Icons.Default.Sort, contentDescription = "Sortieren")
                     }
                     IconButton(onClick = { importLauncher.launch("application/json") }) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "Watchlist importieren")
+                        Icon(Icons.Default.FileDownload, contentDescription = "Importieren")
                     }
-                    IconButton(onClick = { exportLauncher.launch("trader-helper-watchlist.json") }) {
-                        Icon(Icons.Default.FileUpload, contentDescription = "Watchlist exportieren")
+                    IconButton(onClick = { showExportMenu = true }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = "Exportieren")
+                    }
+                    
+                    DropdownMenu(expanded = showExportMenu, onDismissRequest = { showExportMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Watchlist exportieren") },
+                            onClick = { exportWatchlistLauncher.launch("watchlist.json"); showExportMenu = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Einstellungen exportieren") },
+                            onClick = { exportSettingsLauncher.launch("settings.json"); showExportMenu = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Alles exportieren (eine Datei)") },
+                            onClick = { exportAllLauncher.launch("trading_helper_full.json"); showExportMenu = false }
+                        )
                     }
                 }
             )
@@ -188,7 +238,7 @@ fun WatchlistScreen(
                                 SwipeBackground(
                                     stock = stock,
                                     onDelete = { viewModel.removeFromWatchlist(stock) },
-                                    onComment = { commentStock = stock },
+                                    onComment = { segmentsStock = stock },
                                     onCloseSwipe = {
                                         scope.launch {
                                             dismissState.reset()
@@ -199,7 +249,6 @@ fun WatchlistScreen(
                         ) {
                             WatchlistItem(
                                 stock = stock,
-                                logoUrl = logos[stock.symbol],
                                 viewModel = viewModel,
                                 onClick = {
 
@@ -253,24 +302,99 @@ fun WatchlistScreen(
                         onClick = { viewModel.toggleFilterType(filter) }
                     )
                 }
+                
+                if (availableSegments.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("Bereiche", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall)
+                    availableSegments.sorted().forEach { segment ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = segment in filterSegments, onCheckedChange = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(segment)
+                                }
+                            },
+                            onClick = { viewModel.toggleFilterSegment(segment) }
+                        )
+                    }
+                }
             }
             
-            // Comment Dialog
-            commentStock?.let { stock ->
-                var commentText by remember { mutableStateOf(stock.comment) }
+            // Import Selection Dialog
+            if (showImportDialog && pendingImportJson != null) {
                 AlertDialog(
-                    onDismissRequest = { commentStock = null },
-                    title = { Text("Kommentar für ${stock.name}") },
+                    onDismissRequest = { showImportDialog = false },
+                    title = { Text("Daten importieren") },
                     text = {
-                        TextField(value = commentText, onValueChange = { commentText = it }, modifier = Modifier.fillMaxWidth())
+                        Text("Wählen Sie aus, welche Daten aus der Datei übernommen werden sollen.")
                     },
                     confirmButton = {
-                        Button(onClick = { viewModel.updateStockComment(stock, commentText); commentStock = null }) {
+                        Column {
+                            Button(
+                                onClick = {
+                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = true, importSettings = true)
+                                    showImportDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Alles (Watchlist + Einstellungen)") }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = true, importSettings = false)
+                                    showImportDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Nur Watchlist") }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = false, importSettings = true)
+                                    showImportDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Nur Einstellungen") }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showImportDialog = false }) { Text("Abbrechen") }
+                    }
+                )
+            }
+            
+            // Segments Dialog
+            segmentsStock?.let { stock ->
+                var segmentsText by remember { mutableStateOf(stock.segments.joinToString(", ")) }
+                AlertDialog(
+                    onDismissRequest = { segmentsStock = null },
+                    title = { Text("Bereiche für ${stock.name}") },
+                    text = {
+                        Column {
+                            Text("Geben Sie die Bereiche kommagetrennt ein:", style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextField(
+                                value = segmentsText,
+                                onValueChange = { segmentsText = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("z.B. Rohstoffe, KI, Tech") }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            val newList = segmentsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            viewModel.updateStockSegments(stock, newList)
+                            segmentsStock = null
+                        }) {
                             Text("Speichern")
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = { commentStock = null }) { Text("Abbrechen") }
+                        TextButton(onClick = { segmentsStock = null }) { Text("Abbrechen") }
                     }
                 )
             }
@@ -303,7 +427,7 @@ fun SwipeBackground(
             Icon(Icons.Default.ContentCopy, contentDescription = "WKN kopieren", tint = MaterialTheme.colorScheme.primary)
         }
         IconButton(onClick = onComment) {
-            Icon(Icons.Default.Comment, contentDescription = "Kommentar", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.Category, contentDescription = "Bereiche", tint = MaterialTheme.colorScheme.primary)
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Default.Delete, contentDescription = "Löschen", tint = MaterialTheme.colorScheme.error)
@@ -314,7 +438,6 @@ fun SwipeBackground(
 @Composable
 fun WatchlistItem(
     stock: Stock,
-    logoUrl: String?,
     viewModel: StockSearchViewModel,
     onClick: () -> Unit
 ) {
@@ -329,69 +452,56 @@ fun WatchlistItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Logo
+            // Tier Graphic prominent at the start
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
             ) {
-                if (logoUrl != null) {
-                    AsyncImage(
-                        model = logoUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-                } else {
-                    Icon(
-                        Icons.Default.Business,
-                        contentDescription = null,
-                        modifier = Modifier.align(Alignment.Center),
-                        tint = MaterialTheme.colorScheme.outline
-                    )
-                }
+                TierGraphic(stock = stock, modifier = Modifier.size(36.dp))
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = stock.name, fontWeight = FontWeight.Bold, maxLines = 1)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "Symbol: ${stock.symbol}", style = MaterialTheme.typography.bodySmall)
-                    if (stock.wkn != null) {
-                        Text(text = " • WKN: ${stock.wkn}", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (stock.comment.isNotEmpty()) {
-                    Text(
-                        text = stock.comment,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 1
-                    )
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                // Tier & Status Icons
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TierGraphic(stock)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    StatusGraphic(stock)
-                }
-
+                
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Technical Distances
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     DistanceBadge("D10", stock.sma10DistancePercent)
                     Spacer(modifier = Modifier.width(4.dp))
                     DistanceBadge("D50", stock.sma50DistancePercent)
                     Spacer(modifier = Modifier.width(4.dp))
                     DistanceBadge("D200", stock.sma200DistancePercent)
                 }
+
+                if (stock.wkn != null || stock.segments.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (stock.wkn != null) {
+                            Text(text = "WKN: ${stock.wkn}", style = MaterialTheme.typography.bodySmall)
+                            if (stock.segments.isNotEmpty()) {
+                                Text(text = " • ", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        if (stock.segments.isNotEmpty()) {
+                            Text(
+                                text = stock.segments.joinToString(" • "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            StatusGraphic(stock)
         }
 
         HorizontalDivider()
@@ -458,12 +568,11 @@ fun StatusGraphic(stock: Stock) {
 }
 
 @Composable
-fun TierGraphic(stock: Stock) {
-    val d200 = stock.sma200DistancePercent ?: 0.0
+fun TierGraphic(stock: Stock, modifier: Modifier = Modifier) {
     val d50 = stock.sma50DistancePercent ?: 0.0
     val d10 = stock.sma10DistancePercent ?: 0.0
 
-    val isBull = d200 >= 0
+    val isBull = d10 >= 0
     val isAdult = if (isBull) (d50 >= 0 && d10 >= 0) else (d50 < 0 && d10 < 0)
 
     val resId = if (isBull) {
@@ -472,9 +581,11 @@ fun TierGraphic(stock: Stock) {
         if (isAdult) R.drawable.baer_adult else R.drawable.baer_baby
     }
 
+    val finalModifier = if (modifier == Modifier) Modifier.size(24.dp) else modifier
+
     Image(
         painter = painterResource(id = resId),
         contentDescription = null,
-        modifier = Modifier.size(24.dp)
+        modifier = finalModifier
     )
 }

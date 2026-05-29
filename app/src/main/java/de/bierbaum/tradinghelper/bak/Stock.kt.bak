@@ -20,15 +20,9 @@ data class Stock(
     val sma200: Double? = null,
     val sma50: Double? = null,
     val sma10: Double? = null,
-    val segments: List<String> = emptyList(),
+    val comment: String = "",
     val historicalPrices: List<Double> = emptyList(),
-    val quarterlyFinancials: List<QuarterlyFinancial> = emptyList(),
-    val lastHistoricalUpdate: Long = 0,
-    val lastPriceUpdate: Long = 0,
-    val currency: String? = null,
-    val timestamps: List<Long> = emptyList(),
-    val beta: Double? = null,
-    val peRatio: Double? = null
+    val quarterlyFinancials: List<QuarterlyFinancial> = emptyList()
 ) {
     val sma200DistancePercent: Double?
         get() = if (price != null && sma200 != null && sma200 != 0.0) {

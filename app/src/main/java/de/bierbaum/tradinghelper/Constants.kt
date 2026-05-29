@@ -1,6 +1,14 @@
 package de.bierbaum.tradinghelper
 
+import androidx.compose.runtime.mutableStateOf
+
 object Constants {
-    const val TRESHOLD_CROSS = 10.0 // 10%
-    const val TRESHOLD_OVERHEAT = 50.0 // 50%
+    // Diese Werte werden nun dynamisch durch Einstellungen überschrieben
+    var TRESHOLD_CROSS = 10.0
+    var TRESHOLD_OVERHEAT = 50.0
+    
+    fun updateFromSettings(settings: AppSettings) {
+        TRESHOLD_CROSS = settings.thresholdCross
+        TRESHOLD_OVERHEAT = settings.thresholdOverheat
+    }
 }

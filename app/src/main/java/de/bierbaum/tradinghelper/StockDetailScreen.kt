@@ -2,30 +2,14 @@ package de.bierbaum.tradinghelper
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,6 +17,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +37,13 @@ fun StockDetailScreen(
                     IconButton(onClick = { viewModel.navigateTo(AppScreen.Watchlist) }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
                     }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        stock?.let { viewModel.refreshSingleStock(it) }
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Aktualisieren")
+                    }
                 }
             )
         }
@@ -63,32 +57,104 @@ fun StockDetailScreen(
                     .padding(16.dp)
             ) {
                 // Main Info
-                Text(text = s.symbol, style = MaterialTheme.typography.labelLarge)
-                Text(
-                    text = s.price?.let { String.format(Locale.GERMANY, "%.2f €", it) } ?: "---",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                if (s.wkn != null) {
+                    Text(text = s.wkn, style = MaterialTheme.typography.labelLarge)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Text(
+                        text = s.price?.let { String.format(Locale.GERMANY, "%.2f %s", it, s.currency ?: "€") } ?: "---",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    if (s.lastPriceUpdate > 0) {
+                        val sdf = SimpleDateFormat("HH:mm:ss", Locale.GERMANY)
+                        Text(
+                            text = "Stand: ${sdf.format(Date(s.lastPriceUpdate))}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+                }
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Price Chart with SMA200
-                Text(text = "Kurs & SMA 200", style = MaterialTheme.typography.titleMedium)
+                // Key Statistics
+                Text(text = "Kennzahlen", style = MaterialTheme.typography.titleMedium)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(250.dp)
                         .padding(vertical = 8.dp)
                 ) {
-                    val sma200Values = calculateRollingAverage(s.historicalPrices, 200)
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "KGV (aktuell/trailing):", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = s.peRatio?.let { String.format(Locale.GERMANY, "%.2f", it) } ?: "---", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "Beta:", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = s.beta?.let { String.format(Locale.GERMANY, "%.2f", it) } ?: "---", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Price Chart with SMAs
+                Text(text = "Kurs & SMAs (${s.currency ?: ""})", style = MaterialTheme.typography.titleMedium)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .padding(vertical = 8.dp)
+                ) {
+                    val sma10 = calculateRollingAverage(s.historicalPrices, 10)
+                    val sma50 = calculateRollingAverage(s.historicalPrices, 50)
+                    val sma200 = calculateRollingAverage(s.historicalPrices, 200)
+                    
                     StockChart(
                         prices = s.historicalPrices,
-                        sma200Prices = sma200Values,
+                        timestamps = s.timestamps,
+                        sma10 = sma10,
+                        sma50 = sma50,
+                        sma200 = sma200,
+                        currency = s.currency ?: "€",
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(16.dp)
                     )
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // MACD Chart
+                Text(text = "MACD", style = MaterialTheme.typography.titleMedium)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .padding(vertical = 8.dp)
+                ) {
+                    MacdChart(
+                        prices = s.historicalPrices,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    )
+                }
+                
+                Text(
+                    text = "Erläuterung: Der MACD (Moving Average Convergence Divergence) zeigt die Beziehung zwischen zwei gleitenden Durchschnitten. Ein Schnitt der MACD-Linie (Blau) über die Signallinie (Orange) gilt als Kaufsignal.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+                )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -107,59 +173,152 @@ fun StockDetailScreen(
 @Composable
 fun StockChart(
     prices: List<Double>,
-    modifier: Modifier = Modifier,
-    lineColor: Color = MaterialTheme.colorScheme.primary,
-    sma200Prices: List<Double?> = emptyList()
+    timestamps: List<Long>,
+    sma10: List<Double?>,
+    sma50: List<Double?>,
+    sma200: List<Double?>,
+    currency: String,
+    modifier: Modifier = Modifier
 ) {
     if (prices.size < 2) return
     
+    val minPrice = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull()).minOrNull() ?: 0.0
+    val maxPrice = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull()).maxOrNull() ?: 1.0
+    val range = (maxPrice - minPrice).coerceAtLeast(0.0001)
+
     Canvas(modifier = modifier) {
-        val minPrice = prices.minOrNull() ?: 0.0
-        val maxPrice = prices.maxOfOrNull { it } ?: 1.0
-        val range = maxPrice - minPrice
-        
         val width = size.width
         val height = size.height
         
+        // Y-Axis Labels
+        val labelCount = 5
+        for (i in 0 until labelCount) {
+            val priceVal = minPrice + (range / (labelCount - 1) * i)
+            val y = height - (i * (height / (labelCount - 1)))
+            // Note: drawing text in Canvas requires native canvas or a specialized helper, 
+            // for simplicity we focus on the paths and might skip text labels in basic Canvas.
+        }
+
+        // Helper to get Y coordinate
+        fun getY(price: Double): Float = (height - ((price - minPrice) / range) * height).toFloat()
+        fun getX(index: Int): Float = index * (width / (prices.size - 1))
+
+        // SMA 200 Threshold Band (TRESHOLD_CROSS)
+        val threshold = Constants.TRESHOLD_CROSS / 100.0
+        val bandPath = Path()
+        var firstBand = true
+        sma200.forEachIndexed { index, sma ->
+            if (sma != null) {
+                val x = getX(index)
+                val y = getY(sma * (1 + threshold))
+                if (firstBand) { bandPath.moveTo(x, y); firstBand = false }
+                else bandPath.lineTo(x, y)
+            }
+        }
+        // Bottom part of the band
+        for (i in (sma200.size - 1) downTo 0) {
+            val sma = sma200[i]
+            if (sma != null) {
+                bandPath.lineTo(getX(i), getY(sma * (1 - threshold)))
+            }
+        }
+        bandPath.close()
+        drawPath(bandPath, color = Color.Gray.copy(alpha = 0.2f))
+
+        // Draw SMA 200
+        drawSmaPath(sma200, Color(0xFFFF9800), 2f, ::getX, ::getY)
+        // Draw SMA 50
+        drawSmaPath(sma50, Color(0xFF2196F3), 1.5f, ::getX, ::getY)
+        // Draw SMA 10
+        drawSmaPath(sma10, Color(0xFFE91E63), 1.5f, ::getX, ::getY)
+
+        // Draw Price
         val pricePath = Path()
         prices.forEachIndexed { index, price ->
-            val x = index * (width / (prices.size - 1))
-            val y = height - (((price - minPrice) / (if (range == 0.0) 1.0 else range)) * height).toFloat()
-            if (index == 0) {
-                pricePath.moveTo(x, y)
-            } else {
-                pricePath.lineTo(x, y)
-            }
+            val x = getX(index)
+            val y = getY(price)
+            if (index == 0) pricePath.moveTo(x, y) else pricePath.lineTo(x, y)
         }
-        
-        drawPath(
-            path = pricePath,
-            color = lineColor,
-            style = Stroke(width = 2.dp.toPx())
-        )
+        drawPath(pricePath, color = Color.Black, style = Stroke(width = 2.5.dp.toPx()))
+    }
+}
 
-        if (sma200Prices.isNotEmpty()) {
-            val smaPath = Path()
-            var first = true
-            sma200Prices.forEachIndexed { index, sma ->
-                if (sma != null) {
-                    val x = index * (width / (prices.size - 1))
-                    val y = height - (((sma - minPrice) / (if (range == 0.0) 1.0 else range)) * height).toFloat()
-                    if (first) {
-                        smaPath.moveTo(x, y)
-                        first = false
-                    } else {
-                        smaPath.lineTo(x, y)
-                    }
-                }
-            }
-            drawPath(
-                path = smaPath,
-                color = Color(0xFFFF9800),
-                style = Stroke(width = 1.5.dp.toPx())
-            )
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSmaPath(
+    smaValues: List<Double?>,
+    color: Color,
+    thickness: Float,
+    getX: (Int) -> Float,
+    getY: (Double) -> Float
+) {
+    val path = Path()
+    var first = true
+    smaValues.forEachIndexed { index, sma ->
+        if (sma != null) {
+            val x = getX(index)
+            val y = getY(sma)
+            if (first) { path.moveTo(x, y); first = false } else path.lineTo(x, y)
         }
     }
+    drawPath(path, color = color, style = Stroke(width = thickness.dp.toPx()))
+}
+
+@Composable
+fun MacdChart(prices: List<Double>, modifier: Modifier = Modifier) {
+    if (prices.size < 26) return // Minimum for MACD (26-period EMA)
+
+    val ema12 = calculateEma(prices, 12)
+    val ema26 = calculateEma(prices, 26)
+    val macdLine = ema12.zip(ema26) { e12, e26 -> e12 - e26 }
+    val signalLine = calculateEma(macdLine, 9)
+
+    val allValues = macdLine + signalLine
+    val minVal = allValues.minOrNull() ?: -1.0
+    val maxVal = allValues.maxOrNull() ?: 1.0
+    val range = (maxVal - minVal).coerceAtLeast(0.0001)
+
+    Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+
+        fun getY(value: Double): Float = (height - ((value - minVal) / range) * height).toFloat()
+        fun getX(index: Int): Float = index * (width / (macdLine.size - 1))
+
+        // Zero line
+        val zeroY = getY(0.0)
+        drawLine(Color.Gray, start = androidx.compose.ui.geometry.Offset(0f, zeroY), end = androidx.compose.ui.geometry.Offset(width, zeroY))
+
+        // MACD Line (Blue)
+        drawMacdPath(macdLine, Color.Blue, 2f, ::getX, ::getY)
+        // Signal Line (Orange)
+        drawMacdPath(signalLine, Color(0xFFFFA500), 2f, ::getX, ::getY)
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMacdPath(
+    values: List<Double>,
+    color: Color,
+    thickness: Float,
+    getX: (Int) -> Float,
+    getY: (Double) -> Float
+) {
+    val path = Path()
+    values.forEachIndexed { index, v ->
+        val x = getX(index)
+        val y = getY(v)
+        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    drawPath(path, color = color, style = Stroke(width = thickness.dp.toPx()))
+}
+
+fun calculateEma(prices: List<Double>, period: Int): List<Double> {
+    val k = 2.0 / (period + 1)
+    val ema = mutableListOf<Double>()
+    var currentEma = prices.first()
+    prices.forEach { price ->
+        currentEma = (price * k) + (currentEma * (1 - k))
+        ema.add(currentEma)
+    }
+    return ema
 }
 
 @Composable

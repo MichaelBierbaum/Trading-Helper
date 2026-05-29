@@ -47,7 +47,7 @@ class WatchlistExportImportTest {
         // 6. Exportieren
         var jsonExport = ""
         composeTestRule.runOnUiThread {
-            jsonExport = viewModel.exportWatchlistToJson()
+            jsonExport = viewModel.exportAllToJson()
         }
         assertTrue("Export JSON sollte nicht leer sein", jsonExport.length > 5)
 
@@ -59,7 +59,7 @@ class WatchlistExportImportTest {
 
         // 8. Importieren
         composeTestRule.runOnUiThread {
-            viewModel.importWatchlistFromJson(jsonExport)
+            viewModel.importDataFromJson(jsonExport, importStocks = true, importSettings = true)
         }
 
         // 9. Prüfen ob Namen wieder erscheinen (nach automatischem Refresh beim Import)
