@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlin.math.abs
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,11 +136,49 @@ fun WatchlistScreen(
                     Text(text = stringResource(R.string.empty_watchlist_msg))
                 }
             } else {
+                var openSwipeSymbol by remember {
+                    mutableStateOf<String?>(null)
+                }
+
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(items = watchlist, key = { it.symbol }) { stock ->
                         val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { false }
+                            confirmValueChange = { true }
                         )
+                        val scope = rememberCoroutineScope()
+
+                        LaunchedEffect(dismissState.currentValue) {
+
+                            if (dismissState.currentValue ==
+                                SwipeToDismissBoxValue.EndToStart
+                            ) {
+
+                                // andere offene Row merken
+                                if (openSwipeSymbol != stock.symbol) {
+                                    openSwipeSymbol = stock.symbol
+                                }
+
+                            } else {
+
+                                // wenn geschlossen -> reset
+                                if (openSwipeSymbol == stock.symbol) {
+                                    openSwipeSymbol = null
+                                }
+                            }
+                        }
+                        LaunchedEffect(openSwipeSymbol) {
+
+                            if (
+                                openSwipeSymbol != null &&
+                                openSwipeSymbol != stock.symbol &&
+                                dismissState.currentValue ==
+                                SwipeToDismissBoxValue.EndToStart
+                            ) {
+                                scope.launch {
+                                    dismissState.reset()
+                                }
+                            }
+                        }
 
                         SwipeToDismissBox(
                             state = dismissState,
@@ -149,7 +188,12 @@ fun WatchlistScreen(
                                 SwipeBackground(
                                     stock = stock,
                                     onDelete = { viewModel.removeFromWatchlist(stock) },
-                                    onComment = { commentStock = stock }
+                                    onComment = { commentStock = stock },
+                                    onCloseSwipe = {
+                                        scope.launch {
+                                            dismissState.reset()
+                                        }
+                                    }
                                 )
                             }
                         ) {
@@ -157,7 +201,22 @@ fun WatchlistScreen(
                                 stock = stock,
                                 logoUrl = logos[stock.symbol],
                                 viewModel = viewModel,
-                                onClick = { viewModel.navigateTo(AppScreen.Detail, stock) }
+                                onClick = {
+
+                                    if (
+                                        dismissState.currentValue ==
+                                        SwipeToDismissBoxValue.EndToStart
+                                    ) {
+
+                                        scope.launch {
+                                            dismissState.reset()
+                                        }
+
+                                    } else {
+
+                                        viewModel.navigateTo(AppScreen.Detail, stock)
+                                    }
+                                }
                             )
                         }
                     }
@@ -223,7 +282,8 @@ fun WatchlistScreen(
 fun SwipeBackground(
     stock: Stock,
     onDelete: () -> Unit,
-    onComment: () -> Unit
+    onComment: () -> Unit,
+    onCloseSwipe: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     Row(
@@ -234,6 +294,9 @@ fun SwipeBackground(
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        IconButton(onClick = onCloseSwipe) {
+            Icon(Icons.Default.Close, contentDescription = "Swipe-Menü schließen", tint = MaterialTheme.colorScheme.secondary)
+        }
         IconButton(onClick = { 
             clipboardManager.setText(AnnotatedString(stock.wkn ?: ""))
         }) {
@@ -330,25 +393,7 @@ fun WatchlistItem(
                 }
             }
         }
-        
-        // Audio Test Buttons (for testing purposes)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.Start
-        ) {
-            TextButton(onClick = { viewModel.playPositiveSound() }) {
-                Icon(Icons.Default.VolumeUp, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Test Pos", fontSize = 10.sp)
-            }
-            TextButton(onClick = { viewModel.playNegativeSound() }) {
-                Icon(Icons.Default.VolumeDown, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Test Neg", fontSize = 10.sp)
-            }
-        }
+
         HorizontalDivider()
     }
 }
