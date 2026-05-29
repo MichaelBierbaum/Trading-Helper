@@ -44,6 +44,7 @@ fun WatchlistScreen(
     val filterTypes by viewModel.filterTypes.collectAsState()
     val filterSegments by viewModel.filterSegments.collectAsState()
     val availableSegments by viewModel.availableSegments.collectAsState()
+    val isLimitExceeded by viewModel.isApiLimitExceeded.collectAsState()
     val context = LocalContext.current
 
     // Filtering & Sorting
@@ -176,147 +177,170 @@ fun WatchlistScreen(
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
-            if (watchlist.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+        Column(modifier = Modifier.padding(innerPadding)) {
+            if (isLimitExceeded) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(text = stringResource(R.string.empty_watchlist_msg))
-                }
-            } else {
-                var openSwipeSymbol by remember {
-                    mutableStateOf<String?>(null)
-                }
-
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(items = watchlist, key = { it.symbol }) { stock ->
-                        val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { true }
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Tageslimit überschritten. Die App ist für heute nicht mehr benutzbar.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontWeight = FontWeight.Bold
                         )
-                        val scope = rememberCoroutineScope()
+                    }
+                }
+            }
 
-                        LaunchedEffect(dismissState.currentValue) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (watchlist.isEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(text = stringResource(R.string.empty_watchlist_msg))
+                    }
+                } else {
+                    var openSwipeSymbol by remember {
+                        mutableStateOf<String?>(null)
+                    }
 
-                            if (dismissState.currentValue ==
-                                SwipeToDismissBoxValue.EndToStart
-                            ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(items = watchlist, key = { it.symbol }) { stock ->
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                confirmValueChange = { true }
+                            )
+                            val scope = rememberCoroutineScope()
 
-                                // andere offene Row merken
-                                if (openSwipeSymbol != stock.symbol) {
-                                    openSwipeSymbol = stock.symbol
-                                }
+                            LaunchedEffect(dismissState.currentValue) {
 
-                            } else {
+                                if (dismissState.currentValue ==
+                                    SwipeToDismissBoxValue.EndToStart
+                                ) {
 
-                                // wenn geschlossen -> reset
-                                if (openSwipeSymbol == stock.symbol) {
-                                    openSwipeSymbol = null
+                                    // andere offene Row merken
+                                    if (openSwipeSymbol != stock.symbol) {
+                                        openSwipeSymbol = stock.symbol
+                                    }
+
+                                } else {
+
+                                    // wenn geschlossen -> reset
+                                    if (openSwipeSymbol == stock.symbol) {
+                                        openSwipeSymbol = null
+                                    }
                                 }
                             }
-                        }
-                        LaunchedEffect(openSwipeSymbol) {
+                            LaunchedEffect(openSwipeSymbol) {
 
-                            if (
-                                openSwipeSymbol != null &&
-                                openSwipeSymbol != stock.symbol &&
-                                dismissState.currentValue ==
-                                SwipeToDismissBoxValue.EndToStart
-                            ) {
-                                scope.launch {
-                                    dismissState.reset()
+                                if (
+                                    openSwipeSymbol != null &&
+                                    openSwipeSymbol != stock.symbol &&
+                                    dismissState.currentValue ==
+                                    SwipeToDismissBoxValue.EndToStart
+                                ) {
+                                    scope.launch {
+                                        dismissState.reset()
+                                    }
                                 }
                             }
-                        }
 
-                        SwipeToDismissBox(
-                            state = dismissState,
-                            enableDismissFromStartToEnd = false,
-                            enableDismissFromEndToStart = true,
-                            backgroundContent = {
-                                SwipeBackground(
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromStartToEnd = false,
+                                enableDismissFromEndToStart = true,
+                                backgroundContent = {
+                                    SwipeBackground(
+                                        stock = stock,
+                                        onDelete = { viewModel.removeFromWatchlist(stock) },
+                                        onComment = { segmentsStock = stock },
+                                        onCloseSwipe = {
+                                            scope.launch {
+                                                dismissState.reset()
+                                            }
+                                        }
+                                    )
+                                }
+                            ) {
+                                WatchlistItem(
                                     stock = stock,
-                                    onDelete = { viewModel.removeFromWatchlist(stock) },
-                                    onComment = { segmentsStock = stock },
-                                    onCloseSwipe = {
-                                        scope.launch {
-                                            dismissState.reset()
+                                    viewModel = viewModel,
+                                    onClick = {
+
+                                        if (
+                                            dismissState.currentValue ==
+                                            SwipeToDismissBoxValue.EndToStart
+                                        ) {
+
+                                            scope.launch {
+                                                dismissState.reset()
+                                            }
+
+                                        } else {
+
+                                            viewModel.navigateTo(AppScreen.Detail, stock)
                                         }
                                     }
                                 )
                             }
-                        ) {
-                            WatchlistItem(
-                                stock = stock,
-                                viewModel = viewModel,
-                                onClick = {
-
-                                    if (
-                                        dismissState.currentValue ==
-                                        SwipeToDismissBoxValue.EndToStart
-                                    ) {
-
-                                        scope.launch {
-                                            dismissState.reset()
-                                        }
-
-                                    } else {
-
-                                        viewModel.navigateTo(AppScreen.Detail, stock)
-                                    }
-                                }
-                            )
                         }
                     }
                 }
-            }
-            
-            // Sort Menu
-            DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                StockSearchViewModel.SortOrder.entries.forEach { order ->
-                    DropdownMenuItem(
-                        text = { Text(order.name.replace("_", " ")) },
-                        onClick = { viewModel.setSortOrder(order); showSortMenu = false },
-                        trailingIcon = { if (sortOrder == order) Icon(Icons.Default.Check, null) }
-                    )
-                }
-            }
-
-            // Filter Menu (Multiple Selection)
-            DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
-                DropdownMenuItem(
-                    text = { Text("Alle Filter löschen") },
-                    onClick = { viewModel.clearFilters(); showFilterMenu = false }
-                )
-                HorizontalDivider()
-                StockSearchViewModel.FilterType.entries.forEach { filter ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = filter in filterTypes, onCheckedChange = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(filter.name.replace("_", " "))
-                            }
-                        },
-                        onClick = { viewModel.toggleFilterType(filter) }
-                    )
-                }
                 
-                if (availableSegments.isNotEmpty()) {
+                // Sort Menu
+                DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                    StockSearchViewModel.SortOrder.entries.forEach { order ->
+                        DropdownMenuItem(
+                            text = { Text(order.name.replace("_", " ")) },
+                            onClick = { viewModel.setSortOrder(order); showSortMenu = false },
+                            trailingIcon = { if (sortOrder == order) Icon(Icons.Default.Check, null) }
+                        )
+                    }
+                }
+
+                // Filter Menu (Multiple Selection)
+                DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Alle Filter löschen") },
+                        onClick = { viewModel.clearFilters(); showFilterMenu = false }
+                    )
                     HorizontalDivider()
-                    Text("Bereiche", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall)
-                    availableSegments.sorted().forEach { segment ->
+                    StockSearchViewModel.FilterType.entries.forEach { filter ->
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = segment in filterSegments, onCheckedChange = null)
+                                    Checkbox(checked = filter in filterTypes, onCheckedChange = null)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(segment)
+                                    Text(filter.name.replace("_", " "))
                                 }
                             },
-                            onClick = { viewModel.toggleFilterSegment(segment) }
+                            onClick = { viewModel.toggleFilterType(filter) }
                         )
+                    }
+                    
+                    if (availableSegments.isNotEmpty()) {
+                        HorizontalDivider()
+                        Text("Bereiche", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall)
+                        availableSegments.sorted().forEach { segment ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(checked = segment in filterSegments, onCheckedChange = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(segment)
+                                    }
+                                },
+                                onClick = { viewModel.toggleFilterSegment(segment) }
+                            )
+                        }
                     }
                 }
             }
@@ -476,6 +500,11 @@ fun WatchlistItem(
                     DistanceBadge("D50", stock.sma50DistancePercent)
                     Spacer(modifier = Modifier.width(4.dp))
                     DistanceBadge("D200", stock.sma200DistancePercent)
+                    
+                    stock.daysToEarnings?.let { days ->
+                        Spacer(modifier = Modifier.width(8.dp))
+                        EarningsBadge(days)
+                    }
                 }
 
                 if (stock.wkn != null || stock.segments.isNotEmpty()) {
@@ -505,6 +534,40 @@ fun WatchlistItem(
         }
 
         HorizontalDivider()
+    }
+}
+
+@Composable
+fun EarningsBadge(days: Long) {
+    val color = when {
+        days <= 3 -> Color(0xFFF44336) // Rot (sehr nah)
+        days <= 7 -> Color(0xFFFF9800) // Orange (bald)
+        else -> MaterialTheme.colorScheme.primary
+    }
+    
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        shape = MaterialTheme.shapes.extraSmall,
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Event,
+                contentDescription = null,
+                modifier = Modifier.size(10.dp),
+                tint = color
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = "${days}d",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Trading Helper</string>
     <string name="action_search">Suchen</string>
-    <string name="search_hint">Aktie suchen (Name, Symbol, WKN)...</string>
+    <string name="search_hint">Aktie suchen (Name, Symbol)...</string>
     <string name="watchlist_title">Deine Watchlist</string>
     <string name="empty_watchlist_msg">Füge deine ersten Aktien zur Watchlist hinzu!</string>
 </resources>

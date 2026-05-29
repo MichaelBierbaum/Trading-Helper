@@ -20,7 +20,10 @@ class StockSearchIntegrationTest {
     val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun testSearchForUbtechStock() {
+    fun testSearchForAppleStock() {
+        // Skip if API key is not set
+        if (BuildConfig.FMP_API_KEY == "YOUR_FMP_API_KEY_HERE") return
+
         // 1. Warten bis der Splash-Screen (2 Sek) vorbei ist und die Watchlist erscheint
         composeTestRule.waitUntil(timeoutMillis = 15000) {
             composeTestRule.onAllNodesWithTag("add_stock_fab").fetchSemanticsNodes().isNotEmpty()
@@ -35,18 +38,16 @@ class StockSearchIntegrationTest {
             composeTestRule.onAllNodesWithText(searchHint).fetchSemanticsNodes().isNotEmpty()
         }
 
-        // 4. Suche nach der WKN "A4009U"
-        // Dank der neuen Fallback-Logik im Repository sollte die WKN per Web-Suche in die ISIN 
-        // "CNE100006CQ4" aufgelöst und Yahoo dann "Ubtech Robotics Corp Ltd" finden.
-        composeTestRule.onNodeWithText(searchHint).performTextInput("A4009U")
+        // 4. Suche nach "AAPL"
+        composeTestRule.onNodeWithText(searchHint).performTextInput("AAPL")
 
-        // 5. Warten bis das Ergebnis "Ubtech Robotics" erscheint
+        // 5. Warten bis das Ergebnis "Apple" erscheint
         composeTestRule.waitUntil(timeoutMillis = 30000) {
-            composeTestRule.onAllNodesWithText("Ubtech Robotics", substring = true, ignoreCase = true)
+            composeTestRule.onAllNodesWithText("Apple", substring = true, ignoreCase = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
 
         // 6. Überprüfen, ob die Aktie korrekt angezeigt wird
-        composeTestRule.onNodeWithText("Ubtech Robotics", substring = true, ignoreCase = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Apple", substring = true, ignoreCase = true).assertIsDisplayed()
     }
 }

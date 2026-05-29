@@ -47,6 +47,8 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
     private val settingsManager = SettingsManager(application)
     private val soundManager = SoundManager(application)
 
+    val isApiLimitExceeded: StateFlow<Boolean> = repository.isApiLimitExceeded
+
     private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Initial)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 

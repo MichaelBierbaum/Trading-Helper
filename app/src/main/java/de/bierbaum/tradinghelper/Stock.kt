@@ -28,8 +28,16 @@ data class Stock(
     val currency: String? = null,
     val timestamps: List<Long> = emptyList(),
     val beta: Double? = null,
-    val peRatio: Double? = null
+    val peRatio: Double? = null,
+    val averagePeLast5Years: Double? = null,
+    val nextEarningsDate: Long? = null
 ) {
+    val daysToEarnings: Long?
+        get() = nextEarningsDate?.let {
+            val diff = (it * 1000) - System.currentTimeMillis()
+            if (diff > 0) diff / (24 * 60 * 60 * 1000) else 0L
+        }
+
     val sma200DistancePercent: Double?
         get() = if (price != null && sma200 != null && sma200 != 0.0) {
             ((price - sma200) / sma200) * 100

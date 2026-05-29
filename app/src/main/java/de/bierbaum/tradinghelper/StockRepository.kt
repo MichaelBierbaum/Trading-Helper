@@ -3,63 +3,68 @@ package de.bierbaum.tradinghelper
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.HttpException
 import retrofit2.Retrofit
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 /**
- * StockRepository handles fetching stock data from Yahoo Finance and other web sources.
- * It implements a fallback logic to resolve WKNs to Yahoo Tickers without using AI.
+ * StockRepository handles fetching stock data exclusively from Financial Modeling Prep (FMP).
  */
 class StockRepository {
     private val json = Json { 
         ignoreUnknownKeys = true 
     }
     
+    private val apiKey = BuildConfig.FMP_API_KEY
+
+    private val _isApiLimitExceeded = MutableStateFlow(false)
+    val isApiLimitExceeded: StateFlow<Boolean> = _isApiLimitExceeded.asStateFlow()
+
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         })
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "TradingHelperApp/1.0")
+                .build()
+            val response = chain.proceed(request)
+            if (response.code == 429) {
+                _isApiLimitExceeded.value = true
+            }
+            response
+        }
         .build()
 
     private val api = Retrofit.Builder()
-        .baseUrl("https://query1.finance.yahoo.com/")
+        .baseUrl("https://financialmodelingprep.com/")
         .client(okHttpClient)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
-        .create(YahooFinanceApi::class.java)
+        .create(FmpApi::class.java)
 
     /**
-     * Searches for stocks by query (Name, Symbol, WKN).
-     * If Yahoo search returns no results and query looks like a WKN, 
-     * it attempts to resolve it via web search.
+     * Searches for stocks by query (Name, Symbol).
      */
-    suspend fun searchStocks(query: String): List<Stock> {
+    suspend fun searchStocks(query: String): List<Stock> = withContext(Dispatchers.IO) {
         val trimmedQuery = query.trim()
-        println("Searching for: $trimmedQuery")
+        if (trimmedQuery.isEmpty()) return@withContext emptyList()
         
-        return try {
-            var response = api.search(trimmedQuery)
-            println("Initial Yahoo quotes: ${response.quotes.size}")
-            
-            // Fallback for WKN (typically 6 alphanumeric characters)
-            if (response.quotes.isEmpty() && trimmedQuery.length == 6) {
-                println("No results for $trimmedQuery, trying web-based WKN resolution...")
-                val tickerOrIsin = resolveWknToTicker(trimmedQuery)
-                if (tickerOrIsin != null) {
-                    println("Resolved WKN $trimmedQuery to: $tickerOrIsin")
-                    response = api.search(tickerOrIsin)
-                    println("Yahoo quotes after fallback: ${response.quotes.size}")
-                }
-            }
-            
-            response.quotes.map { quote: YahooQuote ->
+        try {
+            val results = api.search(trimmedQuery, apiKey = apiKey)
+            results.map { 
                 Stock(
-                    name = quote.longname ?: quote.shortname ?: quote.symbol,
-                    symbol = quote.symbol
+                    name = it.name ?: it.symbol,
+                    symbol = it.symbol,
+                    currency = it.currency
                 )
             }
         } catch (e: Exception) {
@@ -69,126 +74,73 @@ class StockRepository {
     }
 
     /**
-     * Resolves a German WKN to a Yahoo Finance Ticker by searching common finance sites.
-     * Uses Regex to extract the ISIN from the response.
+     * Fetches details (Price, SMAs, PE, Beta) for a specific symbol.
      */
-    private suspend fun resolveWknToTicker(wkn: String): String? = withContext(Dispatchers.IO) {
-        // Try Ariva first as it has a very simple URL structure for WKNs
-        val arivaUrl = "https://www.ariva.de/$wkn"
-        val arivaIsin = fetchIsinFromUrl(arivaUrl)
-        if (arivaIsin != null) return@withContext arivaIsin
+    suspend fun getStockDetails(symbol: String): Stock? = withContext(Dispatchers.IO) {
+        try {
+            // 1. Fetch Quote
+            val quotes = api.getQuoteStable(symbol, apiKey = apiKey)
+            val quote = quotes.firstOrNull() ?: return@withContext null
 
-        // Try OnVista as fallback
-        val onvistaUrl = "https://www.onvista.de/suche/?search=$wkn"
-        val onvistaIsin = fetchIsinFromUrl(onvistaUrl)
-        if (onvistaIsin != null) return@withContext onvistaIsin
-
-        null
-    }
-
-    private fun fetchIsinFromUrl(url: String): String? {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            .build()
-
-        return try {
-            val response = okHttpClient.newCall(request).execute()
-            val body = response.body?.string() ?: return null
+            // 2. Fetch Historical Prices (for SMAs)
+            val historical = api.getHistoricalPrices(symbol, apiKey = apiKey)
+            val validCloses = historical.map { it.adjClose ?: it.close }.reversed()
             
-            // ISIN Regex: 2 letters, 9 alphanumeric, 1 digit
-            // Often preceded by "ISIN: " or in a data attribute
-            val isinRegex = """[A-Z]{2}[A-Z0-9]{9}[0-9]""".toRegex()
-            isinRegex.find(body)?.value
-        } catch (e: Exception) {
-            println("Error fetching ISIN from $url: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * Fetches details (Price, SMA200) for a specific symbol.
-     */
-    suspend fun getStockDetails(symbol: String): Stock? {
-        return try {
-            val response = api.getChartData(symbol)
-            val result = response.chart.result?.firstOrNull() ?: return null
-            val price = result.meta.regularMarketPrice
-            val currency = result.meta.currency
-            val timestamps = result.timestamp ?: emptyList()
+            // 3. Fetch Profile (Sector, Industry)
+            val profiles = api.getProfile(symbol, apiKey = apiKey)
+            val profile = profiles.firstOrNull()
             
-            val closes = result.indicators.adjclose?.firstOrNull()?.adjclose 
-                ?: result.indicators.quote.firstOrNull()?.close
-                ?: emptyList()
-            
-            val validCloses = closes.filterNotNull()
-            val sma200 = if (validCloses.size >= 200) {
-                validCloses.takeLast(200).average()
+            // 4. Fetch Ratios for 5-year average PE
+            val ratios = try { api.getRatios(symbol, apiKey = apiKey) } catch (e: Exception) { emptyList() }
+            val avgPe = if (ratios.isNotEmpty()) {
+                ratios.mapNotNull { it.priceToEarningsRatio }.average()
             } else null
             
-            val sma50 = if (validCloses.size >= 50) {
-                validCloses.takeLast(50).average()
-            } else null
+            // If quote.pe is null, use the latest from ratios
+            val currentPe = quote.pe ?: ratios.firstOrNull()?.priceToEarningsRatio
             
-            val sma10 = if (validCloses.size >= 10) {
-                validCloses.takeLast(10).average()
-            } else null
+            val segments = mutableListOf<String>()
+            profile?.sector?.let { segments.add(it) }
+            profile?.industry?.let { segments.add(it) }
 
-            // Fetch Financials and Name
-            var longName: String? = null
-            var beta: Double? = null
-            var peRatio: Double? = null
-            var segments: List<String> = emptyList()
-            val financials = try {
-                val summary = api.getQuoteSummary(symbol)
-                val resultSummary = summary.quoteSummary.result?.firstOrNull()
-                longName = resultSummary?.price?.longName ?: resultSummary?.price?.shortName
-                beta = resultSummary?.defaultKeyStatistics?.beta?.raw
-                peRatio = resultSummary?.summaryDetail?.trailingPE?.raw 
-                    ?: resultSummary?.summaryDetail?.forwardPE?.raw
-                    ?: resultSummary?.defaultKeyStatistics?.forwardPE?.raw
-                
-                val fetchedSegments = mutableListOf<String>()
-                resultSummary?.assetProfile?.sector?.let { fetchedSegments.add(it) }
-                resultSummary?.assetProfile?.industry?.let { fetchedSegments.add(it) }
-                segments = fetchedSegments
+            val sma200 = if (validCloses.size >= 200) validCloses.takeLast(200).average() else null
+            val sma50 = if (validCloses.size >= 50) validCloses.takeLast(50).average() else null
+            val sma10 = if (validCloses.size >= 10) validCloses.takeLast(10).average() else null
 
-                resultSummary?.earnings?.financialsChart?.quarterly?.map {
-                    QuarterlyFinancial(
-                        date = it.date,
-                        revenue = it.revenue.raw,
-                        earnings = it.earnings.raw
-                    )
-                } ?: emptyList()
-            } catch (e: Exception) {
-                emptyList()
+            // Parse earnings date if available
+            val nextEarningsDate = quote.earningsAnnouncement?.let {
+                try {
+                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                    sdf.parse(it)?.time?.div(1000)
+                } catch (e: Exception) { null }
             }
 
             Stock(
-                name = longName ?: symbol,
+                name = profile?.companyName ?: quote.name ?: symbol,
                 symbol = symbol,
-                price = price,
+                price = quote.price,
                 sma200 = sma200,
                 sma50 = sma50,
                 sma10 = sma10,
                 segments = segments,
                 historicalPrices = validCloses,
-                quarterlyFinancials = financials,
-                lastHistoricalUpdate = System.currentTimeMillis(),
-                currency = currency,
-                timestamps = timestamps,
-                beta = beta,
-                peRatio = peRatio
+                currency = profile?.currency ?: quote.exchange ?: "USD",
+                beta = quote.beta,
+                peRatio = currentPe,
+                averagePeLast5Years = avgPe,
+                nextEarningsDate = nextEarningsDate,
+                lastHistoricalUpdate = System.currentTimeMillis()
             )
         } catch (e: Exception) {
+            println("Error fetching details for $symbol: ${e.message}")
             null
         }
     }
 
-    suspend fun getLatestPrice(symbol: String): Double? {
-        return try {
-            val response = api.getChartData(symbol, range = "1d", interval = "1m")
-            response.chart.result?.firstOrNull()?.meta?.regularMarketPrice
+    suspend fun getLatestPrice(symbol: String): Double? = withContext(Dispatchers.IO) {
+        try {
+            val quotes = api.getQuoteStable(symbol, apiKey = apiKey)
+            quotes.firstOrNull()?.price
         } catch (e: Exception) {
             null
         }

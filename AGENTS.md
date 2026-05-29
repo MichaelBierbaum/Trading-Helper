@@ -10,7 +10,7 @@ Jeder Agent folgt dem Schema:
 - **Kontext**: Die App soll beim Aktien-Traden unterstützen, indem sie den optimalen Zeitpunkt findet, wann eine Aktie ge- oder verkauft werden sollte.
   Um diesen optimalen Zeitpunkt perfekt zu finden, soll
   - Dem Nutzer unterschiedliche grafische Hilfsmittel angeboten werden.
-  - Finanzdaten aus dem Internet, z.B. von yahoo finance herangezogen, aufbereitet und grafisch dargestellt werden.
+  - Finanzdaten aus dem Internet, z.B. von Financial Modeling Prep (FMP) herangezogen, aufbereitet und grafisch dargestellt werden.
   - Aktien-Kurse als Diagramm (mit Datum und Währung) und der Abstand des aktuellen Kurses zum SMA200, SMA50 und SMA10 in % angezeigt werden.
   - Sobald der aktuelle Kurs einen bestimmten Abstand (TRESHOLD_CROSS) zum SMA200 unterschreitet, soll 
     - entweder ein "goldener Stern" (aktueller Kurs schneidet von unten den SMA200) oder 
@@ -50,9 +50,7 @@ Jeder Agent folgt dem Schema:
   - Lösche niemals - unter keinen Umständen - eine Datei. Stattdessen:
     - benenne die alte Datei um (indem du ein .bak anhängst) und
     - verschiebe diese in einen Unterordner "bak"
-  - Schreibe am Ende für jedes Feature Unittests, führe diese aus und führe ggf. ein BugFixing durch, so dass die Tests bestanden werden.
-  - Änderungen sollen in Git erst nach erfolgreichem Unittest eingecheckt werden. Dabei sollen keine geheimen secrets in git eingecheckt werden, da das Repository öffentlich ist.
-  - Am Ende sollen immer alle Tests durchlaufen werden. Falls dabei ein Test nicht bestanden wird, suche entweder den Fehler und wenn du keinen findest informiere mich über den aktuellen Stand.
+  - Schreibe am Ende für jedes Feature Unittests
 
 ---
 
@@ -71,15 +69,6 @@ Jeder Agent folgt dem Schema:
 - **Kontext**: Weiterentwicklung der "Trading Helper" App von einem Prototyp zu einer produktiven Anwendung.
 - **Format**: Code-Snippets in Kotlin/Compose, Erklärungen der Design-Entscheidungen.
 - **Constraints**: Fokus auf Clean Code und aktuelle Android-Best-Practices.
-
----
-
-## Agent: Daten-Extraktor (Gemini)
-- **Rolle**: Spezialist für Datenextraktion aus unstrukturierten Quellen (Bild/Text).
-- **Aufgabe**: Extraktion von relevanten Finanzkennzahlen aus https://de.finance.yahoo.com/, Screenshots von Börsenberichten oder Charts.
-- **Kontext**: Automatisierte Dateneingabe für den Nutzer.
-- **Format**: JSON-Format oder strukturierte Liste.
-- **Constraints**: Höchste Präzision bei Zahlenwerten. Unklarheiten explizit markieren.
 
 ---
 
@@ -107,4 +96,6 @@ Um die Codequalität hochzuhalten, folge diesen festen Architektur-Mustern:
 - Verwende ausdrucksstarke Namen für Testfunktionen (z. B. ``when_prices_cross_sma200_golden_cross_is_detected`()`).
 - Wenn alle Änderungen vorgenommen wurde, baue am Ende das Projekt einmal neu.
 - Führe nach jedem Bau des Projekts alle Tests aus, untersuche die Bugs und fixe diese im Anschluss.
-- Bevor du neue Features einführst, schreibe erst einen Unittest - arbeite also testdriven. 
+- Bevor du neue Funktionen einführst, schreibe erst einen Unittest - arbeite also testdriven (außer für produktive API-Schnittstellen).
+- führe am Ende alle Unittests aus (mit Ausnahme von produktiven API-Schnittstellen wie z.B. FmpApiTest). Fixe bei Bedarf den Code, damit die Unittests bestanden werden.
+- wenn alle Unittests bestanden wurden, installiere die App auf dem angeschlossenen Device per run App.

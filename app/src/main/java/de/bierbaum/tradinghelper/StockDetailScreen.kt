@@ -2,6 +2,7 @@ package de.bierbaum.tradinghelper
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,6 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -94,8 +98,13 @@ fun StockDetailScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "KGV (aktuell/trailing):", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = "KGV (aktuell):", style = MaterialTheme.typography.bodyMedium)
                             Text(text = s.peRatio?.let { String.format(Locale.GERMANY, "%.2f", it) } ?: "---", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "KGV (Ø 5 Jahre):", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = s.averagePeLast5Years?.let { String.format(Locale.GERMANY, "%.2f", it) } ?: "---", fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -112,24 +121,30 @@ fun StockDetailScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(300.dp)
+                        .height(350.dp)
                         .padding(vertical = 8.dp)
                 ) {
                     val sma10 = calculateRollingAverage(s.historicalPrices, 10)
                     val sma50 = calculateRollingAverage(s.historicalPrices, 50)
                     val sma200 = calculateRollingAverage(s.historicalPrices, 200)
                     
-                    StockChart(
-                        prices = s.historicalPrices,
-                        timestamps = s.timestamps,
-                        sma10 = sma10,
-                        sma50 = sma50,
-                        sma200 = sma200,
-                        currency = s.currency ?: "€",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        StockChart(
+                            prices = s.historicalPrices,
+                            timestamps = s.timestamps,
+                            sma10 = sma10,
+                            sma50 = sma50,
+                            sma200 = sma200,
+                            currency = s.currency ?: "€",
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        ChartLegend()
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -171,6 +186,33 @@ fun StockDetailScreen(
 }
 
 @Composable
+fun ChartLegend() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LegendItem("Kurs", Color.Black)
+        LegendItem("SMA10", Color(0xFFE91E63))
+        LegendItem("SMA50", Color(0xFF2196F3))
+        LegendItem("SMA200", Color(0xFFFF9800))
+    }
+}
+
+@Composable
+fun LegendItem(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(12.dp, 2.dp)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(text = label, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
 fun StockChart(
     prices: List<Double>,
     timestamps: List<Long>,
@@ -182,28 +224,118 @@ fun StockChart(
 ) {
     if (prices.size < 2) return
     
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val yLabelStyle = MaterialTheme.typography.labelSmall.copy(
+        fontSize = 10.sp, 
+        color = Color.White,
+        fontWeight = FontWeight.Bold
+    )
+    val xLabelStyle = MaterialTheme.typography.labelSmall.copy(
+        fontSize = 10.sp, 
+        color = Color.White,
+        fontWeight = FontWeight.Medium
+    )
+    val tooltipStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = Color.White)
+    
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+    
     val minPrice = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull()).minOrNull() ?: 0.0
     val maxPrice = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull()).maxOrNull() ?: 1.0
     val range = (maxPrice - minPrice).coerceAtLeast(0.0001)
 
-    Canvas(modifier = modifier) {
-        val width = size.width
-        val height = size.height
+    val yLabelWidthPx = with(density) { 55.dp.toPx() }
+    val xLabelHeightPx = with(density) { 45.dp.toPx() }
+
+    val crosshairColor = MaterialTheme.colorScheme.primary
+    val tooltipBgColor = Color.Black.copy(alpha = 0.95f)
+
+    Canvas(
+        modifier = modifier
+            .background(Color(0xFF1A1A1A)) // Dark background for better contrast
+            .pointerInput(prices.size) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.any { it.pressed }) {
+                            val position = event.changes.first().position
+                            val chartWidth = size.width - yLabelWidthPx
+                            val index = ((position.x - yLabelWidthPx) / chartWidth * (prices.size - 1))
+                                .toInt()
+                                .coerceIn(0, prices.size - 1)
+
+                            if (position.x >= yLabelWidthPx) {
+                                selectedIndex = index
+                                event.changes.forEach { it.consume() }
+                            }
+                        } else {
+                            selectedIndex = null
+                        }
+                    }
+                }
+            }
+    ) {
+        val chartWidth = size.width - yLabelWidthPx
+        val chartHeight = size.height - xLabelHeightPx
         
-        // Y-Axis Labels
+        // Draw Axis Lines
+        drawLine(
+            color = Color.Black,
+            start = androidx.compose.ui.geometry.Offset(yLabelWidthPx, 0f),
+            end = androidx.compose.ui.geometry.Offset(yLabelWidthPx, chartHeight),
+            strokeWidth = 3f
+        )
+        drawLine(
+            color = Color.Black,
+            start = androidx.compose.ui.geometry.Offset(yLabelWidthPx, chartHeight),
+            end = androidx.compose.ui.geometry.Offset(size.width, chartHeight),
+            strokeWidth = 3f
+        )
+
+        // Grid & Y-Axis Labels
         val labelCount = 5
         for (i in 0 until labelCount) {
             val priceVal = minPrice + (range / (labelCount - 1) * i)
-            val y = height - (i * (height / (labelCount - 1)))
-            // Note: drawing text in Canvas requires native canvas or a specialized helper, 
-            // for simplicity we focus on the paths and might skip text labels in basic Canvas.
+            val y = chartHeight - (i * (chartHeight / (labelCount - 1)))
+            
+            drawLine(
+                color = Color.LightGray.copy(alpha = 0.5f),
+                start = androidx.compose.ui.geometry.Offset(yLabelWidthPx, y),
+                end = androidx.compose.ui.geometry.Offset(size.width, y),
+                strokeWidth = 1f
+            )
+            
+            drawText(
+                textMeasurer = textMeasurer,
+                text = String.format(Locale.GERMANY, "%.2f", priceVal),
+                topLeft = androidx.compose.ui.geometry.Offset(5f, y - 15f),
+                style = yLabelStyle
+            )
         }
 
-        // Helper to get Y coordinate
-        fun getY(price: Double): Float = (height - ((price - minPrice) / range) * height).toFloat()
-        fun getX(index: Int): Float = index * (width / (prices.size - 1))
+        // X-Axis Labels (Dates)
+        if (timestamps.size >= 2) {
+            val dateLabelCount = 4
+            val sdf = SimpleDateFormat("dd.MM", Locale.GERMANY)
+            for (i in 0 until dateLabelCount) {
+                val index = ((timestamps.size - 1) * i.toDouble() / (dateLabelCount - 1)).toInt()
+                val x = yLabelWidthPx + (index * (chartWidth / (timestamps.size - 1)))
+                val dateStr = sdf.format(Date(timestamps[index]))
+                
+                val textLayout = textMeasurer.measure(dateStr, xLabelStyle)
+                drawText(
+                    textMeasurer = textMeasurer,
+                    text = dateStr,
+                    topLeft = androidx.compose.ui.geometry.Offset(x - textLayout.size.width / 2, chartHeight + 15f),
+                    style = xLabelStyle
+                )
+            }
+        }
 
-        // SMA 200 Threshold Band (TRESHOLD_CROSS)
+        fun getY(price: Double): Float = (chartHeight - ((price - minPrice) / range) * chartHeight).toFloat()
+        fun getX(index: Int): Float = yLabelWidthPx + index * (chartWidth / (prices.size - 1))
+
+        // SMA 200 Band
         val threshold = Constants.TRESHOLD_CROSS / 100.0
         val bandPath = Path()
         var firstBand = true
@@ -215,21 +347,20 @@ fun StockChart(
                 else bandPath.lineTo(x, y)
             }
         }
-        // Bottom part of the band
         for (i in (sma200.size - 1) downTo 0) {
             val sma = sma200[i]
             if (sma != null) {
                 bandPath.lineTo(getX(i), getY(sma * (1 - threshold)))
             }
         }
-        bandPath.close()
-        drawPath(bandPath, color = Color.Gray.copy(alpha = 0.2f))
+        if (!firstBand) {
+            bandPath.close()
+            drawPath(bandPath, color = Color.Gray.copy(alpha = 0.1f))
+        }
 
-        // Draw SMA 200
+        // Draw SMAs
         drawSmaPath(sma200, Color(0xFFFF9800), 2f, ::getX, ::getY)
-        // Draw SMA 50
         drawSmaPath(sma50, Color(0xFF2196F3), 1.5f, ::getX, ::getY)
-        // Draw SMA 10
         drawSmaPath(sma10, Color(0xFFE91E63), 1.5f, ::getX, ::getY)
 
         // Draw Price
@@ -239,7 +370,61 @@ fun StockChart(
             val y = getY(price)
             if (index == 0) pricePath.moveTo(x, y) else pricePath.lineTo(x, y)
         }
-        drawPath(pricePath, color = Color.Black, style = Stroke(width = 2.5.dp.toPx()))
+        drawPath(pricePath, color = Color.Black, style = Stroke(width = 2.dp.toPx()))
+
+        // Interactive Crosshair & Tooltip
+        selectedIndex?.let { index ->
+            if (index < prices.size && index < timestamps.size) {
+                val x = getX(index)
+                val price = prices[index]
+                val y = getY(price)
+                val dateStr = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(Date(timestamps[index]))
+                val priceStr = String.format(Locale.GERMANY, "%.2f %s", price, currency)
+
+                // Vertical Line
+                drawLine(
+                    color = crosshairColor.copy(alpha = 0.6f),
+                    start = androidx.compose.ui.geometry.Offset(x, 0f),
+                    end = androidx.compose.ui.geometry.Offset(x, chartHeight),
+                    strokeWidth = 2.dp.toPx()
+                )
+
+                // Selection Point
+                drawCircle(
+                    color = crosshairColor,
+                    radius = 4.dp.toPx(),
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+
+                // Tooltip Box
+                val textLayout = textMeasurer.measure("$priceStr\n$dateStr", tooltipStyle)
+                val padding = 8.dp.toPx()
+                val tooltipWidth = textLayout.size.width + padding * 2
+                val tooltipHeight = textLayout.size.height + padding * 2
+                
+                var tooltipX = x + 10f
+                if (tooltipX + tooltipWidth > size.width) {
+                    tooltipX = x - tooltipWidth - 10f
+                }
+                
+                var tooltipY = y - tooltipHeight - 10f
+                if (tooltipY < 0) tooltipY = y + 10f
+
+                drawRoundRect(
+                    color = tooltipBgColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(tooltipX, tooltipY),
+                    size = androidx.compose.ui.geometry.Size(tooltipWidth, tooltipHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
+                )
+
+                drawText(
+                    textMeasurer = textMeasurer,
+                    text = "$priceStr\n$dateStr",
+                    topLeft = androidx.compose.ui.geometry.Offset(tooltipX + padding, tooltipY + padding),
+                    style = tooltipStyle
+                )
+            }
+        }
     }
 }
 
