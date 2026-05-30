@@ -16,8 +16,9 @@ fun SettingsScreen(viewModel: StockSearchViewModel) {
     val settings by viewModel.settings.collectAsState()
     
     var crossText by remember(settings) { mutableStateOf(settings.thresholdCross.toString()) }
-    var overheatText by remember(settings) { mutableStateOf(settings.thresholdOverheat.toString()) }
+    var fmpCountText by remember (settings) {mutableStateOf(settings.fmpCallCount.toString())}
     var intervallText by remember(settings) { mutableStateOf(settings.kursIntervall.toString()) }
+    var countDayChartText by remember(settings) { mutableStateOf(settings.countDays.toString()) }
 
     Scaffold(
         topBar = {
@@ -56,16 +57,16 @@ fun SettingsScreen(viewModel: StockSearchViewModel) {
             )
 
             OutlinedTextField(
-                value = overheatText,
-                onValueChange = { overheatText = it },
-                label = { Text("D200 Overheat Threshold (%)") },
-                placeholder = { Text("Standard: 50.0") },
+                value = fmpCountText,
+                onValueChange = { fmpCountText = it },
+                label = { Text("Anzahl heutiger FMP API-Aufrufe") },
+                placeholder = { Text("Standard: 0") },
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
 
             Text(
-                "Hinweis: Dieser Wert beeinflusst die Anzeige des \"Überhitzungs-Status\" (roter Stern).",
+                "Hinweis: Am Tag kann man maximal 250 API-Aufrufe durchführen.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary
             )
@@ -82,16 +83,41 @@ fun SettingsScreen(viewModel: StockSearchViewModel) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
 
+            OutlinedTextField(
+                value = countDayChartText,
+                onValueChange = { countDayChartText = it },
+                label = { Text("Anzahl Tage in der Kurs-Grafik") },
+                placeholder = { Text("Standard: 30") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+
             Button(
                 onClick = {
                     val cross = crossText.toDoubleOrNull() ?: 10.0
-                    val overheat = overheatText.toDoubleOrNull() ?: 50.0
+                    val fmpCount = fmpCountText.toIntOrNull() ?: 0
                     val intervall = intervallText.toIntOrNull() ?: 5
-                    viewModel.updateSettings(AppSettings(cross, overheat, intervall))
+                    val countDay = countDayChartText.toIntOrNull() ?: 30
+                    viewModel.updateSettings(settings.copy(
+                        thresholdCross = cross,
+                        fmpCallCount = fmpCount,
+                        kursIntervall = intervall,
+                        countDays = countDay
+                    ))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Speichern")
+            }
+
+            HorizontalDivider()
+            Text("Datenpflege", style = MaterialTheme.typography.titleLarge)
+            Button(
+                onClick = { viewModel.cleanupCache() },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Daten bereinigen (Nicht-Watchlist)")
             }
         }
     }

@@ -2,25 +2,71 @@ package de.bierbaum.tradinghelper
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -30,9 +76,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.abs
-import java.util.Locale
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +92,7 @@ fun WatchlistScreen(
     val filterSegments by viewModel.filterSegments.collectAsState()
     val availableSegments by viewModel.availableSegments.collectAsState()
     val isLimitExceeded by viewModel.isApiLimitExceeded.collectAsState()
+    val lastUpdateAllTime by viewModel.lastUpdateAllTime.collectAsState()
     val context = LocalContext.current
 
     // Filtering & Sorting
@@ -54,12 +102,14 @@ fun WatchlistScreen(
             else {
                 filterTypes.all { filter ->
                     when (filter) {
-                        StockSearchViewModel.FilterType.PRICE_GT_SMA10 -> (stock.price ?: 0.0) > (stock.sma10 ?: 0.0)
-                        StockSearchViewModel.FilterType.PRICE_LT_SMA10 -> (stock.price ?: 0.0) < (stock.sma10 ?: 0.0)
-                        StockSearchViewModel.FilterType.PRICE_GT_SMA50 -> (stock.price ?: 0.0) > (stock.sma50 ?: 0.0)
-                        StockSearchViewModel.FilterType.PRICE_LT_SMA50 -> (stock.price ?: 0.0) < (stock.sma50 ?: 0.0)
-                        StockSearchViewModel.FilterType.PRICE_GT_SMA200 -> (stock.price ?: 0.0) > (stock.sma200 ?: 0.0)
-                        StockSearchViewModel.FilterType.PRICE_LT_SMA200 -> (stock.price ?: 0.0) < (stock.sma200 ?: 0.0)
+                        StockSearchViewModel.FilterType.BEAR_BABY -> stock.getAnimal == Animals.BearBaby
+                        StockSearchViewModel.FilterType.BEAR_ADULT -> stock.getAnimal == Animals.BearAdult
+                        StockSearchViewModel.FilterType.BULL_BABY -> stock.getAnimal == Animals.BullBaby
+                        StockSearchViewModel.FilterType.BULL_ADULT -> stock.getAnimal == Animals.BullAdult
+                        StockSearchViewModel.FilterType.GOLDEN_CROSS -> stock.getStatus == StockStatus.GoldenCross
+                        StockSearchViewModel.FilterType.DEATH_CROSS -> stock.getStatus == StockStatus.DeathCross
+                        StockSearchViewModel.FilterType.OVERHEAT -> stock.getStatus >= StockStatus.StarRed25
+                        StockSearchViewModel.FilterType.TURNAROUND -> stock.getStatus <= StockStatus.Star75
                     }
                 }
             }
@@ -144,6 +194,22 @@ fun WatchlistScreen(
                     IconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.Default.Sort, contentDescription = "Sortieren")
                     }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(onClick = { viewModel.updateAllPrices() }) {
+                            Icon(Icons.Default.Update, contentDescription = "Preise aktualisieren", tint = MaterialTheme.colorScheme.primary)
+                        }
+
+                        lastUpdateAllTime?.let { time ->
+                            val sdf = SimpleDateFormat("HH:mm:ss", Locale.GERMANY)
+                            Text(
+                                text = sdf.format(Date(time)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                        }
+                    }
+
                     IconButton(onClick = { importLauncher.launch("application/json") }) {
                         Icon(Icons.Default.FileDownload, contentDescription = "Importieren")
                     }
@@ -164,6 +230,11 @@ fun WatchlistScreen(
                             text = { Text("Alles exportieren (eine Datei)") },
                             onClick = { exportAllLauncher.launch("trading_helper_full.json"); showExportMenu = false }
                         )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Watchlist leeren (Init)", color = MaterialTheme.colorScheme.error) },
+                            onClick = { viewModel.initWatchlist(); showExportMenu = false }
+                        )
                     }
                 }
             )
@@ -178,27 +249,6 @@ fun WatchlistScreen(
         }
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding)) {
-            if (isLimitExceeded) {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Tageslimit überschritten. Die App ist für heute nicht mehr benutzbar.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
             Box(modifier = Modifier.weight(1f)) {
                 if (watchlist.isEmpty()) {
                     Column(
@@ -357,17 +407,17 @@ fun WatchlistScreen(
                         Column {
                             Button(
                                 onClick = {
-                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = true, importSettings = true)
+                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = true, importSettings = true, importCache = true)
                                     showImportDialog = false
                                 },
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text("Alles (Watchlist + Einstellungen)") }
+                            ) { Text("Alles (Watchlist + Settings + Cache)") }
                             
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             OutlinedButton(
                                 onClick = {
-                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = true, importSettings = false)
+                                    viewModel.importDataFromJson(pendingImportJson!!, importStocks = true, importSettings = false, importCache = false)
                                     showImportDialog = false
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -484,7 +534,7 @@ fun WatchlistItem(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                TierGraphic(stock = stock, modifier = Modifier.size(36.dp))
+                TierGraphic(stock = stock)
             }
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -607,48 +657,46 @@ fun DistanceBadge(label: String, distance: Double?) {
 
 @Composable
 fun StatusGraphic(stock: Stock) {
-    val d200 = stock.sma200DistancePercent ?: 0.0
-    
-    val resId = when {
-        stock.isGoldenCross -> R.drawable.star_golden
-        stock.isDeathCross -> R.drawable.skull
-        else -> R.drawable.star_empty
-    }
-    
-    val tint = when {
-        stock.isGoldenCross || stock.isDeathCross -> null
-        abs(d200) < Constants.TRESHOLD_CROSS -> MaterialTheme.colorScheme.outline
-        d200 > Constants.TRESHOLD_OVERHEAT -> Color.Red
-        else -> MaterialTheme.colorScheme.outline
+    val resId = when (stock.getStatus){
+        StockStatus.Star00 -> { R.drawable.star_00}
+        StockStatus.Star25 -> { R.drawable.star_25}
+        StockStatus.Star50 -> { R.drawable.star_50}
+        StockStatus.Star75 -> { R.drawable.star_75}
+        StockStatus.GoldenCross -> {R.drawable.star_100}
+        StockStatus.DeathCross -> {R.drawable.skull}
+        StockStatus.StarRed25 -> {R.drawable.star_red_25}
+        StockStatus.StarRed50 -> {R.drawable.star_red_50}
+        StockStatus.StarRed75 -> {R.drawable.star_red_75}
+        StockStatus.StarRed100 -> {R.drawable.star_red_100}
     }
 
     Image(
         painter = painterResource(id = resId),
-        contentDescription = null,
+        contentDescription = "kaufen, halten oder verkaufen?",
         modifier = Modifier.size(24.dp),
-        colorFilter = tint?.let { ColorFilter.tint(it) }
     )
 }
 
 @Composable
-fun TierGraphic(stock: Stock, modifier: Modifier = Modifier) {
-    val d50 = stock.sma50DistancePercent ?: 0.0
-    val d10 = stock.sma10DistancePercent ?: 0.0
-
-    val isBull = d10 >= 0
-    val isAdult = if (isBull) (d50 >= 0 && d10 >= 0) else (d50 < 0 && d10 < 0)
-
-    val resId = if (isBull) {
-        if (isAdult) R.drawable.bulle_adult else R.drawable.bulle_baby
-    } else {
-        if (isAdult) R.drawable.baer_adult else R.drawable.baer_baby
+fun TierGraphic(stock: Stock) {
+    val resId = when (stock.getAnimal) {
+        Animals.BullBaby -> {
+            R.drawable.bull_baby
+        }
+        Animals.BullAdult -> {
+            R.drawable.bull_adult
+        }
+        Animals.BearAdult -> {
+            R.drawable.bear_adult
+        }
+        else -> {
+            R.drawable.bear_baby
+        }
     }
-
-    val finalModifier = if (modifier == Modifier) Modifier.size(24.dp) else modifier
 
     Image(
         painter = painterResource(id = resId),
-        contentDescription = null,
-        modifier = finalModifier
+        contentDescription = "Bullen oder Bärenmarkt?",
+        modifier = Modifier.size(36.dp)
     )
 }
