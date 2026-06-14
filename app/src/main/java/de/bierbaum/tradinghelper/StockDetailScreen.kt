@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -38,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -187,7 +188,7 @@ fun StockDetailScreen(
 
                 // Key Statistics
                 Text(text = "Kennzahlen", style = MaterialTheme.typography.titleMedium)
-                Card(
+                OutlinedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
@@ -217,7 +218,7 @@ fun StockDetailScreen(
                 
                 var selectedTimeFrame by remember { mutableStateOf(TimeFrame.ONE_MONTH) }
 
-                Card(
+                OutlinedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(350.dp)
@@ -259,7 +260,7 @@ fun StockDetailScreen(
 
                 // MACD Chart
                 Text(text = "MACD", style = MaterialTheme.typography.titleMedium)
-                Card(
+                OutlinedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
@@ -280,7 +281,7 @@ fun StockDetailScreen(
 
                 // RSI Chart
                 Text(text = "RSI (Relative Strength Index)", style = MaterialTheme.typography.titleMedium)
-                Card(
+                OutlinedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
@@ -315,7 +316,7 @@ fun AlertSettingsCard(stock: Stock, viewModel: StockSearchViewModel) {
     var showNegDialog by remember { mutableStateOf(false) }
 
     Text(text = "Benachrichtigungs-Einstellungen", style = MaterialTheme.typography.titleMedium)
-    Card(
+    OutlinedCard(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -432,17 +433,19 @@ fun StockChart(
     timeFrame: TimeFrame,
     modifier: Modifier = Modifier
 ) {
+    val backgroundColor = MaterialTheme.colorScheme.surface
     if (prices.size < 2 || timestamps.size < 2) {
-        Box(modifier = modifier.background(Color(0xFF1A1A1A)), contentAlignment = Alignment.Center) {
+        Box(modifier = modifier.background(backgroundColor), contentAlignment = Alignment.Center) {
             Text("Nicht genügend Daten", color = Color.Gray)
         }
         return
     }
 
+    val colorCrosshair = colorResource(R.color.color_crosshair)
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color.White)
-    val highlightLabelStyle = labelStyle.copy(fontWeight = FontWeight.Bold, color = Color.Green)
+    val highlightLabelStyle = labelStyle.copy(fontWeight = FontWeight.Bold, color = colorCrosshair)
 
     var selectedIndex by remember(prices) { mutableStateOf<Int?>(null) }
 
@@ -460,7 +463,7 @@ fun StockChart(
 
     Canvas(
         modifier = modifier
-            .background(Color(0xFF1A1A1A))
+            .background(backgroundColor)
             .pointerInput(prices) {
                 val chartWidth = size.width - leftLabelWidthPx - rightLabelWidthPx
                 val effectiveWidth = chartWidth - 2 * horizontalPaddingPx
@@ -576,7 +579,7 @@ fun StockChart(
 
                 // Vertical Line
                 drawLine(
-                    color = Color.Green.copy(alpha = 0.8f),
+                    color = colorCrosshair.copy(alpha = 0.8f),
                     start = Offset(x, 0f),
                     end = Offset(x, chartHeight),
                     strokeWidth = 2f,
@@ -585,7 +588,7 @@ fun StockChart(
 
                 // Horizontal Line
                 drawLine(
-                    color = Color.Green.copy(alpha = 0.8f),
+                    color = colorCrosshair.copy(alpha = 0.8f),
                     start = Offset(leftLabelWidthPx, y),
                     end = Offset(size.width - rightLabelWidthPx, y),
                     strokeWidth = 2f,
@@ -597,21 +600,21 @@ fun StockChart(
                 val timeStr = timeFullFormatter.format(Date(timestamp * 1000))
                 
                 // Bottom Time Highlight
-                drawRect(Color.Green, topLeft = Offset(x - 40f, chartHeight), size = androidx.compose.ui.geometry.Size(80f, xLabelHeightPx))
+                drawRect(colorCrosshair, topLeft = Offset(x - 40f, chartHeight), size = androidx.compose.ui.geometry.Size(80f, xLabelHeightPx))
                 drawText(textMeasurer, timeStr, topLeft = Offset(x - 38f, chartHeight + 2f), style = highlightLabelStyle.copy(color = Color.Black))
 
                 // Left Percent Highlight
-                drawRect(Color.Green, topLeft = Offset(0f, y - 10f), size = androidx.compose.ui.geometry.Size(leftLabelWidthPx, leftLabelHeightPx))
+                drawRect(colorCrosshair, topLeft = Offset(0f, y - 10f), size = androidx.compose.ui.geometry.Size(leftLabelWidthPx, leftLabelHeightPx))
                 drawText(textMeasurer, String.format(Locale.GERMANY, "%+.1f%%", percent), topLeft = Offset(5f, y - 10f), style = highlightLabelStyle.copy(color = Color.Black))
 
                 // Right Price Highlight
-                drawRect(Color.Green, topLeft = Offset(size.width - rightLabelWidthPx, y - 10f), size = androidx.compose.ui.geometry.Size(rightLabelWidthPx,
+                drawRect(colorCrosshair, topLeft = Offset(size.width - rightLabelWidthPx, y - 10f), size = androidx.compose.ui.geometry.Size(rightLabelWidthPx,
                     leftLabelHeightPx
                 ))
                 drawText(textMeasurer, String.format(Locale.GERMANY, "%.2f", price), topLeft = Offset(size.width - rightLabelWidthPx + 5f, y - 10f), style = highlightLabelStyle.copy(color = Color.Black))
                 
                 // Circle around Datapoint at line
-                drawCircle(Color.Green, radius = 4.dp.toPx(), center = Offset(x, y))
+                drawCircle(colorCrosshair, radius = 4.dp.toPx(), center = Offset(x, y))
             }
         }
     }
