@@ -1,0 +1,171 @@
+package de.bierbaum.tradinghelper
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.util.Locale
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CapitolTradesScreen(
+    viewModel: CapitolTradesViewModel,
+    onBack: () -> Unit,
+    onAddStock: (Stock) -> Unit
+) {
+    val trades by viewModel.trades.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadTrades()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("White House Insider") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                items(trades) { scoredTrade ->
+                    TradeItemRow(scoredTrade, onAddStock)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TradeItemRow(scoredTrade: ScoredTrade, onAddStock: (Stock) -> Unit) {
+    val trade = scoredTrade.trade
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = trade.asset?.assetName ?: trade.ticker,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${trade.ticker} • ${trade.issuer?.sector ?: "Unbekannt"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                
+                ScoreBadge(scoredTrade.score)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Person, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(text = trade.politician.fullName, style = MaterialTheme.typography.bodyMedium)
+                
+                if (scoredTrade.isCluster) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = Color(0xFFFFD700).copy(alpha = 0.2f),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700))
+                    ) {
+                        Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Group, null, modifier = Modifier.size(12.dp), tint = Color(0xFFFFD700))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("CLUSTER (${scoredTrade.clusterCount})", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD700))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(text = "Typ: ${trade.txType.uppercase()}", style = MaterialTheme.typography.labelSmall)
+                    Text(text = "Datum: ${trade.txDate}", style = MaterialTheme.typography.labelSmall)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(text = "Volumen: ${trade.amountRange}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = { onAddStock(Stock(name = trade.asset?.assetName ?: trade.ticker, symbol = trade.ticker)) },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Default.TrendingUp, null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Beobachten", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ScoreBadge(score: Int) {
+    val color = when {
+        score >= 70 -> Color(0xFF4CAF50)
+        score >= 40 -> Color(0xFFFF9800)
+        else -> Color(0xFFF44336)
+    }
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        shape = MaterialTheme.shapes.small,
+        border = androidx.compose.foundation.BorderStroke(1.dp, color)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("SCORE", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = color)
+            Text(text = score.toString(), style = MaterialTheme.typography.titleMedium, color = color, fontWeight = FontWeight.Bold)
+        }
+    }
+}

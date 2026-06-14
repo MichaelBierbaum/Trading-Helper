@@ -9,17 +9,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import de.bierbaum.tradinghelper.ui.theme.TradingHelperTheme
 
 class MainActivity : ComponentActivity() {
-    val viewModel: StockSearchViewModel by viewModels()
+    private val viewModel: StockSearchViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             TradingHelperTheme {
                 val currentScreen by viewModel.currentScreen.collectAsState()
+                val repository = remember { StockRepository() }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -31,6 +33,17 @@ class MainActivity : ComponentActivity() {
                         AppScreen.Search -> StockSearchScreen(viewModel)
                         AppScreen.Detail -> StockDetailScreen(viewModel)
                         AppScreen.Settings -> SettingsScreen(viewModel)
+                        AppScreen.CapitolTrades -> {
+                            val capitolViewModel = remember { CapitolTradesViewModel(repository) }
+                            CapitolTradesScreen(
+                                viewModel = capitolViewModel,
+                                onBack = { viewModel.navigateTo(AppScreen.Watchlist) },
+                                onAddStock = { stock ->
+                                    viewModel.addToWatchlist(stock)
+                                    viewModel.navigateTo(AppScreen.Watchlist)
+                                }
+                            )
+                        }
                     }
                 }
             }

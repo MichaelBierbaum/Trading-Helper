@@ -11,8 +11,20 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import retrofit2.http.GET
+import retrofit2.http.Query
 import java.text.SimpleDateFormat
 import java.util.Locale
+
+interface CapitolTradesApi {
+    @GET("trades")
+    suspend fun getTrades(
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 100,
+        @Query("txType") txType: String = "buy",
+        @Query("orderBy") orderBy: String = "-filingDate"
+    ): TradesResponse
+}
 
 /**
  * StockRepository handles fetching stock data from Yahoo Finance (prices)
@@ -60,6 +72,13 @@ class StockRepository {
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
         .create(YahooFinanceApi::class.java)
+
+    private val capitolApi = Retrofit.Builder()
+        .baseUrl("https://bff.capitoltrades.com/")
+        .client(okHttpClient)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+        .create(CapitolTradesApi::class.java)
 
     var onFmpCall: (() -> Unit)? = null
 
@@ -186,6 +205,15 @@ class StockRepository {
             getYahooData(symbol)?.price
         } catch (_: Exception) {
             null
+        }
+    }
+
+    suspend fun getCapitolTrades(page: Int = 1): List<TradeItem> = withContext(Dispatchers.IO) {
+        try {
+            capitolApi.getTrades(page = page).data
+        } catch (e: Exception) {
+            println("Error fetching Capitol Trades: ${e.message}")
+            emptyList()
         }
     }
 }

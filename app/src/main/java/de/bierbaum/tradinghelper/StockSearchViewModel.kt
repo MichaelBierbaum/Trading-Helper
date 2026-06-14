@@ -49,7 +49,8 @@ enum class AppScreen {
     Watchlist,
     Search,
     Detail,
-    Settings
+    Settings,
+    CapitolTrades
 }
 
 class StockSearchViewModel(application: Application) : AndroidViewModel(application) {

@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
@@ -186,6 +187,9 @@ fun WatchlistScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = { viewModel.navigateTo(AppScreen.CapitolTrades) }) {
+                        Icon(Icons.Default.AccountBalance, contentDescription = "White House Insider", tint = Color(0xFFFFD700))
+                    }
                     IconButton(onClick = { viewModel.navigateTo(AppScreen.Settings) }) {
                         Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
                     }
