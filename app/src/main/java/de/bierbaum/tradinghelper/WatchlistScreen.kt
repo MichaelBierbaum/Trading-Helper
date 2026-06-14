@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
@@ -438,17 +440,47 @@ fun WatchlistScreen(
             
             // Segments Dialog
             segmentsStock?.let { stock ->
-                var segmentsText by remember { mutableStateOf(stock.segments.joinToString(", ")) }
+                var selectedFromList by remember { mutableStateOf(stock.segments.toSet()) }
+                var newSegmentsText by remember { mutableStateOf("") }
+                
                 AlertDialog(
                     onDismissRequest = { segmentsStock = null },
                     title = { Text("Bereiche für ${stock.name}") },
                     text = {
-                        Column {
-                            Text("Geben Sie die Bereiche kommagetrennt ein:", style = MaterialTheme.typography.bodySmall)
-                            Spacer(modifier = Modifier.height(8.dp))
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            if (availableSegments.isNotEmpty()) {
+                                Text("Vorhandene Bereiche auswählen:", style = MaterialTheme.typography.labelSmall)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                availableSegments.sorted().forEach { segment ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedFromList = if (segment in selectedFromList) {
+                                                    selectedFromList - segment
+                                                } else {
+                                                    selectedFromList + segment
+                                                }
+                                            }
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Checkbox(
+                                            checked = segment in selectedFromList,
+                                            onCheckedChange = null
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(segment)
+                                    }
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                            }
+                            
+                            Text("Neue Bereiche hinzufügen (kommagetrennt):", style = MaterialTheme.typography.labelSmall)
+                            Spacer(modifier = Modifier.height(4.dp))
                             TextField(
-                                value = segmentsText,
-                                onValueChange = { segmentsText = it },
+                                value = newSegmentsText,
+                                onValueChange = { newSegmentsText = it },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("z.B. Rohstoffe, KI, Tech") }
                             )
@@ -456,8 +488,9 @@ fun WatchlistScreen(
                     },
                     confirmButton = {
                         Button(onClick = {
-                            val newList = segmentsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                            viewModel.updateStockSegments(stock, newList)
+                            val fromText = newSegmentsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            val combined = (selectedFromList + fromText).toList()
+                            viewModel.updateStockSegments(stock, combined)
                             segmentsStock = null
                         }) {
                             Text("Speichern")
