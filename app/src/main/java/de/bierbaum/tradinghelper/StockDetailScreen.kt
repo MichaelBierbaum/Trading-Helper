@@ -2,8 +2,20 @@ package de.bierbaum.tradinghelper
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -12,22 +24,52 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ModifierInfo
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.*
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,27 +212,35 @@ fun StockDetailScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                val countDays = Constants.COUNT_DAYS_CHART
-
                 // Price Chart with SMAs
-                Text(text = "Kurs & SMAs (${s.currency ?: ""}) der letzten $countDays Tage", style = MaterialTheme.typography.titleMedium)
+                Text(text = "Kurs & SMAs (${s.currency ?: ""})", style = MaterialTheme.typography.titleMedium)
+                
+                var selectedTimeFrame by remember { mutableStateOf(TimeFrame.ONE_MONTH) }
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(350.dp)
                         .padding(vertical = 8.dp)
                 ) {
-                    val sma10 = calculateRollingAverage(s.historicalPrices, 10)
-                    val sma50 = calculateRollingAverage(s.historicalPrices, 50)
-                    val sma200 = calculateRollingAverage(s.historicalPrices, 200)
+                    val sma10Full = calculateRollingAverage(s.historicalPrices, 10)
+                    val sma50Full = calculateRollingAverage(s.historicalPrices, 50)
+                    val sma200Full = calculateRollingAverage(s.historicalPrices, 200)
 
+                    val (filteredPrices, filteredTimestamps, startIndex) = filterDataByTimeFrame(s.historicalPrices, s.timestamps, selectedTimeFrame)
+                    val filteredSma10 = sma10Full.drop(startIndex)
+                    val filteredSma50 = sma50Full.drop(startIndex)
+                    val filteredSma200 = sma200Full.drop(startIndex)
 
                     Column(modifier = Modifier.padding(16.dp)) {
                         StockChart(
-                            prices = s.historicalPrices.takeLast(countDays),
-                            sma10 = sma10.takeLast(countDays),
-                            sma50 = sma50.takeLast(countDays),
-                            sma200 = sma200.takeLast(countDays),
+                            prices = filteredPrices,
+                            timestamps = filteredTimestamps,
+                            sma10 = filteredSma10,
+                            sma50 = filteredSma50,
+                            sma200 = filteredSma200,
+                            currency = s.currency ?: "",
+                            timeFrame = selectedTimeFrame,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -199,6 +249,11 @@ fun StockDetailScreen(
                         ChartLegend()
                     }
                 }
+                
+                TimeFrameSelector(
+                    selectedTimeFrame = selectedTimeFrame,
+                    onTimeFrameSelected = { selectedTimeFrame = it }
+                )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -316,7 +371,7 @@ fun AlertConfigContent(stock: Stock, isPositive: Boolean, viewModel: StockSearch
                 onValueChange = {},
                 readOnly = true,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier.menuAnchor().fillMaxWidth()
+                modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth()
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 DropdownMenuItem(text = { Text("Keiner") }, onClick = { selectedStatus = null; expanded = false })
@@ -369,38 +424,130 @@ fun getAlertDescription(status: StockStatus?, from: StockStatus?, to: StockStatu
 @Composable
 fun StockChart(
     prices: List<Double>,
+    timestamps: List<Long>,
     sma10: List<Double?>,
     sma50: List<Double?>,
     sma200: List<Double?>,
+    currency: String,
+    timeFrame: TimeFrame,
     modifier: Modifier = Modifier
 ) {
-    if (prices.size < 2) return
+    if (prices.size < 2 || timestamps.size < 2) {
+        Box(modifier = modifier.background(Color(0xFF1A1A1A)), contentAlignment = Alignment.Center) {
+            Text("Nicht genügend Daten", color = Color.Gray)
+        }
+        return
+    }
+
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val yLabelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
-    
-    val minPrice = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull()).minOrNull() ?: 0.0
-    val maxPrice = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull()).maxOrNull() ?: 1.0
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color.White)
+    val highlightLabelStyle = labelStyle.copy(fontWeight = FontWeight.Bold, color = Color.Green)
+
+    var selectedIndex by remember(prices) { mutableStateOf<Int?>(null) }
+
+    val allValues = (prices + sma10.filterNotNull() + sma50.filterNotNull() + sma200.filterNotNull())
+    val minPrice = allValues.minOrNull() ?: 0.0
+    val maxPrice = allValues.maxOrNull() ?: 1.0
     val range = (maxPrice - minPrice).coerceAtLeast(0.0001)
+    val firstPrice = prices.first()
 
-    val yLabelWidthPx = with(density) { 55.dp.toPx() }
-    val xLabelHeightPx = with(density) { 45.dp.toPx() }
+    val leftLabelWidthPx = with(density) { 50.dp.toPx() }
+    val leftLabelHeightPx = with(density) {25.dp.toPx()}
+    val rightLabelWidthPx = with(density) { 55.dp.toPx() }
+    val xLabelHeightPx = with(density) { 25.dp.toPx() }
+    val horizontalPaddingPx = with(density) { 12.dp.toPx() }
 
-    Canvas(modifier = modifier.background(Color(0xFF1A1A1A))) {
-        val chartWidth = size.width - yLabelWidthPx
+    Canvas(
+        modifier = modifier
+            .background(Color(0xFF1A1A1A))
+            .pointerInput(prices) {
+                val chartWidth = size.width - leftLabelWidthPx - rightLabelWidthPx
+                val effectiveWidth = chartWidth - 2 * horizontalPaddingPx
+                detectTapGestures { offset ->
+                    val x = offset.x
+                    if (x in leftLabelWidthPx..(size.width - rightLabelWidthPx)) {
+                        val index = ((x - leftLabelWidthPx - horizontalPaddingPx) / (effectiveWidth / (prices.size - 1)))
+                            .toInt()
+                            .coerceIn(0, prices.size - 1)
+                        selectedIndex = if (selectedIndex == index) null else index
+                    } else {
+                        selectedIndex = null
+                    }
+                }
+            }
+            .pointerInput(prices) {
+                val chartWidth = size.width - leftLabelWidthPx - rightLabelWidthPx
+                val effectiveWidth = chartWidth - 2 * horizontalPaddingPx
+                detectDragGestures(
+                    onDrag = { change, _ ->
+                        val x = change.position.x
+                        if (x in leftLabelWidthPx..(size.width - rightLabelWidthPx)) {
+                            val index = ((x - leftLabelWidthPx - horizontalPaddingPx) / (effectiveWidth / (prices.size - 1)))
+                                .toInt()
+                                .coerceIn(0, prices.size - 1)
+                            selectedIndex = index
+                        }
+                    }
+                )
+            }
+    ) {
+        val chartWidth = size.width - leftLabelWidthPx - rightLabelWidthPx
         val chartHeight = size.height - xLabelHeightPx
-        
-        // Grid & Labels
-        val labelCount = 5
-        for (i in 0 until labelCount) {
-            val priceVal = minPrice + (range / (labelCount - 1) * i)
-            val y = chartHeight - (i * (chartHeight / (labelCount - 1)))
-            drawLine(color = Color.LightGray.copy(alpha = 0.3f), start = androidx.compose.ui.geometry.Offset(yLabelWidthPx, y), end = androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 1f)
-            drawText(textMeasurer = textMeasurer, text = String.format(Locale.GERMANY, "%.2f", priceVal), topLeft = androidx.compose.ui.geometry.Offset(5f, y - 15f), style = yLabelStyle)
-        }
+        val effectiveWidth = chartWidth - 2 * horizontalPaddingPx
 
         fun getY(price: Double): Float = (chartHeight - ((price - minPrice) / range) * chartHeight).toFloat()
-        fun getX(index: Int): Float = yLabelWidthPx + index * (chartWidth / (prices.size - 1))
+        fun getX(index: Int): Float = leftLabelWidthPx + horizontalPaddingPx + index * (effectiveWidth / (prices.size - 1))
+
+        // Grid & Y-Labels
+        val labelCount = 5
+        for (i in 0 until labelCount) {
+            val y = chartHeight - (i * (chartHeight / (labelCount - 1)))
+            val priceVal = minPrice + (range / (labelCount - 1) * i)
+            val percentVal = ((priceVal - firstPrice) / firstPrice) * 100
+
+            drawLine(
+                color = Color.LightGray.copy(alpha = 0.2f),
+                start = Offset(leftLabelWidthPx, y),
+                end = Offset(size.width - rightLabelWidthPx, y),
+                strokeWidth = 1f
+            )
+
+            drawText(
+                textMeasurer = textMeasurer,
+                text = String.format(Locale.GERMANY, "%+.1f%%", percentVal),
+                topLeft = Offset(5f, y - 10f),
+                style = labelStyle
+            )
+
+            drawText(
+                textMeasurer = textMeasurer,
+                text = String.format(Locale.GERMANY, "%.2f %s", priceVal, currency),
+                topLeft = Offset(size.width - rightLabelWidthPx + 5f, y - 10f),
+                style = labelStyle
+            )
+        }
+
+        // X-Labels (Time)
+        val xLabelCount = 4
+        val timeFormatter = when (timeFrame) {
+            TimeFrame.ONE_DAY, TimeFrame.THREE_DAYS -> SimpleDateFormat("HH:mm", Locale.GERMANY)
+            else -> SimpleDateFormat("dd.MM.", Locale.GERMANY)
+        }
+
+        for (i in 0 until xLabelCount) {
+            val idx = (i * (prices.size - 1) / (xLabelCount - 1)).coerceIn(0, prices.size - 1)
+            val x = getX(idx)
+            val timestamp = timestamps[idx]
+            val dateStr = timeFormatter.format(Date(timestamp * 1000))
+            
+            drawText(
+                textMeasurer = textMeasurer,
+                text = dateStr,
+                topLeft = Offset(x - 20f, chartHeight + 5f),
+                style = labelStyle
+            )
+        }
 
         // Draw Price
         val pricePath = Path()
@@ -409,12 +556,64 @@ fun StockChart(
             val y = getY(price)
             if (index == 0) pricePath.moveTo(x, y) else pricePath.lineTo(x, y)
         }
-        drawPath(pricePath, color = Color.White, style = Stroke(width = 1.dp.toPx()))
+        drawPath(pricePath, color = Color.White, style = Stroke(width = 1.5.dp.toPx()))
 
         // Draw SMAs
         drawSmaPath(sma200, Color(0xFFFF9800), 2f, ::getX, ::getY)
         drawSmaPath(sma50, Color(0xFF2196F3), 1.5f, ::getX, ::getY)
         drawSmaPath(sma10, Color(0xFFE91E63), 1.5f, ::getX, ::getY)
+
+        // Fadenkreuz / Crosshair
+        selectedIndex?.let { index ->
+            if (index in prices.indices) {
+                val x = getX(index)
+                val price = prices[index]
+                val y = getY(price)
+                val timestamp = timestamps[index]
+                val percent = ((price - firstPrice) / firstPrice) * 100
+
+                val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+
+                // Vertical Line
+                drawLine(
+                    color = Color.Green.copy(alpha = 0.8f),
+                    start = Offset(x, 0f),
+                    end = Offset(x, chartHeight),
+                    strokeWidth = 2f,
+                    pathEffect = dashEffect
+                )
+
+                // Horizontal Line
+                drawLine(
+                    color = Color.Green.copy(alpha = 0.8f),
+                    start = Offset(leftLabelWidthPx, y),
+                    end = Offset(size.width - rightLabelWidthPx, y),
+                    strokeWidth = 2f,
+                    pathEffect = dashEffect
+                )
+
+                // Highlighting Labels
+                val timeFullFormatter = SimpleDateFormat("dd.MM. HH:mm", Locale.GERMANY)
+                val timeStr = timeFullFormatter.format(Date(timestamp * 1000))
+                
+                // Bottom Time Highlight
+                drawRect(Color.Green, topLeft = Offset(x - 40f, chartHeight), size = androidx.compose.ui.geometry.Size(80f, xLabelHeightPx))
+                drawText(textMeasurer, timeStr, topLeft = Offset(x - 38f, chartHeight + 2f), style = highlightLabelStyle.copy(color = Color.Black))
+
+                // Left Percent Highlight
+                drawRect(Color.Green, topLeft = Offset(0f, y - 10f), size = androidx.compose.ui.geometry.Size(leftLabelWidthPx, leftLabelHeightPx))
+                drawText(textMeasurer, String.format(Locale.GERMANY, "%+.1f%%", percent), topLeft = Offset(5f, y - 10f), style = highlightLabelStyle.copy(color = Color.Black))
+
+                // Right Price Highlight
+                drawRect(Color.Green, topLeft = Offset(size.width - rightLabelWidthPx, y - 10f), size = androidx.compose.ui.geometry.Size(rightLabelWidthPx,
+                    leftLabelHeightPx
+                ))
+                drawText(textMeasurer, String.format(Locale.GERMANY, "%.2f", price), topLeft = Offset(size.width - rightLabelWidthPx + 5f, y - 10f), style = highlightLabelStyle.copy(color = Color.Black))
+                
+                // Circle around Datapoint at line
+                drawCircle(Color.Green, radius = 4.dp.toPx(), center = Offset(x, y))
+            }
+        }
     }
 }
 
@@ -451,7 +650,7 @@ fun MacdChart(prices: List<Double>, modifier: Modifier = Modifier) {
         fun getY(value: Double): Float = (height - ((value - minVal) / range) * height).toFloat()
         fun getX(index: Int): Float = if (macdLine.size > 1) index * (width / (macdLine.size - 1)) else width / 2
         val zeroY = getY(0.0)
-        drawLine(Color.Gray, start = androidx.compose.ui.geometry.Offset(0f, zeroY), end = androidx.compose.ui.geometry.Offset(width, zeroY))
+        drawLine(Color.Gray, start = Offset(0f, zeroY), end = Offset(width, zeroY))
         drawMacdPath(macdLine, Color.Blue, 2f, ::getX, ::getY)
         drawMacdPath(signalLine, Color(0xFFFFA500), 2f, ::getX, ::getY)
     }
@@ -477,8 +676,8 @@ fun RsiChart(prices: List<Double>, modifier: Modifier = Modifier) {
         fun getY(value: Double): Float = (height - (value / 100.0) * height).toFloat()
         fun getX(index: Int): Float = if (rsiValues.size > 1) index * (width / (rsiValues.size - 1)) else width / 2
         
-        drawLine(Color.Red.copy(alpha = 0.5f), start = androidx.compose.ui.geometry.Offset(0f, getY(70.0)), end = androidx.compose.ui.geometry.Offset(width, getY(70.0)), strokeWidth = 2f)
-        drawLine(Color.Green.copy(alpha = 0.5f), start = androidx.compose.ui.geometry.Offset(0f, getY(30.0)), end = androidx.compose.ui.geometry.Offset(width, getY(30.0)), strokeWidth = 2f)
+        drawLine(Color.Red.copy(alpha = 0.5f), start = Offset(0f, getY(70.0)), end = Offset(width, getY(70.0)), strokeWidth = 2f)
+        drawLine(Color.Green.copy(alpha = 0.5f), start = Offset(0f, getY(30.0)), end = Offset(width, getY(30.0)), strokeWidth = 2f)
         
         val path = Path()
         rsiValues.forEachIndexed { index, rsi ->
@@ -555,14 +754,14 @@ fun FinancialGrowthChart(financials: List<QuarterlyFinancial>) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "Earn", modifier = Modifier.width(40.dp), style = MaterialTheme.typography.labelSmall)
-                    val maxEarn = financials.maxOf { Math.abs(it.earnings) }.coerceAtLeast(1L)
-                    val widthFraction = (Math.abs(quarterly.earnings).toFloat() / maxEarn).coerceIn(0.05f, 1f)
+                    val maxEarn = financials.maxOf { abs(it.earnings) }.coerceAtLeast(1L)
+                    val widthFraction = (abs(quarterly.earnings).toFloat() / maxEarn).coerceIn(0.05f, 1f)
                     val barColor = if (quarterly.earnings >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
                     Box(modifier = Modifier.fillMaxWidth(0.7f * widthFraction).height(12.dp).background(barColor, MaterialTheme.shapes.extraSmall))
                     Spacer(modifier = Modifier.width(8.dp)); Text(text = formatLargeNumber(quarterly.earnings), style = MaterialTheme.typography.bodySmall)
                     prevQuarter?.let { prev ->
                         if (prev.earnings != 0L) {
-                            val growth = ((quarterly.earnings - prev.earnings).toDouble() / Math.abs(prev.earnings)) * 100
+                            val growth = ((quarterly.earnings - prev.earnings).toDouble() / abs(prev.earnings)) * 100
                             val growthColor = if (growth >= 0) Color(0xFF4CAF50) else Color(0xFFF44336)
                             Text(text = String.format(Locale.GERMANY, " (%+.1f%%)", growth), style = MaterialTheme.typography.labelSmall, color = growthColor, modifier = Modifier.padding(start = 4.dp))
                         }
@@ -587,5 +786,74 @@ fun formatLargeNumber(number: Long): String {
         number >= 1_000_000 -> String.format(Locale.GERMANY, "%.1fM", number / 1_000_000.0)
         number >= 1_000 -> String.format(Locale.GERMANY, "%.1fK", number / 1_000.0)
         else -> number.toString()
+    }
+}
+
+enum class TimeFrame(val label: String) {
+    ONE_DAY("1T"),
+    THREE_DAYS("3T"),
+    ONE_WEEK("1W"),
+    ONE_MONTH("1M"),
+    YTD("YTD"),
+    ONE_YEAR("1J"),
+    THREE_YEARS("3J"),
+    MAX("Max")
+}
+
+fun filterDataByTimeFrame(
+    prices: List<Double>,
+    timestamps: List<Long>,
+    timeFrame: TimeFrame
+): Triple<List<Double>, List<Long>, Int> {
+    if (prices.isEmpty()) return Triple(emptyList(), emptyList(), 0)
+    
+    val now = (timestamps.lastOrNull() ?: (System.currentTimeMillis() / 1000))
+    val secondsInDay = 86400L
+    
+    val cutoff = when (timeFrame) {
+        TimeFrame.ONE_DAY -> now - secondsInDay
+        TimeFrame.THREE_DAYS -> now - (3 * secondsInDay)
+        TimeFrame.ONE_WEEK -> now - (7 * secondsInDay)
+        TimeFrame.ONE_MONTH -> now - (30 * secondsInDay)
+        TimeFrame.YTD -> {
+            val cal = Calendar.getInstance()
+            cal.time = Date(now * 1000)
+            cal.set(Calendar.DAY_OF_YEAR, 1)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.timeInMillis / 1000
+        }
+        TimeFrame.ONE_YEAR -> now - (365 * secondsInDay)
+        TimeFrame.THREE_YEARS -> now - (3 * 365 * secondsInDay)
+        TimeFrame.MAX -> 0L
+    }
+    
+    var index = timestamps.indexOfFirst { it >= cutoff }
+    if (index == -1) index = 0
+    
+    return Triple(prices.drop(index), timestamps.drop(index), index)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimeFrameSelector(
+    selectedTimeFrame: TimeFrame,
+    onTimeFrameSelected: (TimeFrame) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TimeFrame.entries.forEach { tf ->
+            FilterChip(
+                selected = selectedTimeFrame == tf,
+                onClick = { onTimeFrameSelected(tf) },
+                label = { Text(tf.label, fontSize = 10.sp) }
+            )
+        }
     }
 }

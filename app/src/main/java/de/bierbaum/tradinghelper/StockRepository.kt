@@ -1,7 +1,5 @@
 package de.bierbaum.tradinghelper
 
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -104,7 +102,7 @@ class StockRepository {
      */
     suspend fun getYahooData(symbol: String): Stock? = withContext(Dispatchers.IO) {
         try {
-            val response = yahooApi.getChartData(symbol)
+            val response = yahooApi.getChartData(symbol, range = "5y") // Erweitert auf 5 Jahre
             val result = response.chart.result?.firstOrNull() ?: return@withContext null
             val price = result.meta.regularMarketPrice
             val currency = result.meta.currency
@@ -155,7 +153,7 @@ class StockRepository {
             val quote = fmpApi.getQuoteStable(symbol, apiKey = apiKey).firstOrNull()
             
             // 3. Ratios (Avg PE)
-            val ratios = try { fmpApi.getRatios(symbol, apiKey = apiKey) } catch (e: Exception) { emptyList() }
+            val ratios = try { fmpApi.getRatios(symbol, apiKey = apiKey) } catch (_: Exception) { emptyList() }
             val avgPe = if (ratios.isNotEmpty()) {
                 ratios.mapNotNull { it.priceToEarningsRatio }.average()
             } else null
@@ -164,7 +162,7 @@ class StockRepository {
                 try {
                     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
                     sdf.parse(it)?.time?.div(1000)
-                } catch (e: Exception) { null }
+                } catch (_: Exception) { null }
             }
 
             PartialFmpData(
@@ -187,29 +185,9 @@ class StockRepository {
     suspend fun getLatestPrice(symbol: String): Double? = withContext(Dispatchers.IO) {
         try {
             getYahooData(symbol)?.price
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
-    }
-
-    suspend fun resolveWknToTicker(wkn: String): String? = withContext(Dispatchers.IO) {
-        val arivaUrl = "https://www.ariva.de/$wkn"
-        val arivaIsin = fetchIsinFromUrl(arivaUrl)
-        if (arivaIsin != null) return@withContext arivaIsin
-        null
-    }
-
-    private fun fetchIsinFromUrl(url: String): String? {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            .build()
-        return try {
-            val response = okHttpClient.newCall(request).execute()
-            val body = response.body?.string() ?: return null
-            val isinRegex = """[A-Z]{2}[A-Z0-9]{9}[0-9]""".toRegex()
-            isinRegex.find(body)?.value
-        } catch (e: Exception) { null }
     }
 }
 
