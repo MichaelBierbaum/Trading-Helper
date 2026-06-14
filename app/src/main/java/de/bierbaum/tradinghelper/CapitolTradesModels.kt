@@ -1,6 +1,5 @@
 package de.bierbaum.tradinghelper
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable

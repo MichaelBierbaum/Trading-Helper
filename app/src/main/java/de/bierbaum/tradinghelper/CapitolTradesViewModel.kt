@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -28,8 +27,6 @@ class CapitolTradesViewModel(private val repository: StockRepository) : ViewMode
         "Ro Khanna",
         "Michael McCaul"
     )
-
-    private val bigSizes = listOf("$50,001 - $100,000", "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "$1,000,001 - $5,000,000", "$5,000,001 - $25,000,000", "$25,000,001 - $50,000,000", "> $50,000,000")
 
     fun loadTrades() {
         viewModelScope.launch {
@@ -74,7 +71,7 @@ class CapitolTradesViewModel(private val repository: StockRepository) : ViewMode
             val tx = sdf.parse(txDate)?.time ?: return null
             val pub = sdf.parse(pubDate)?.time ?: return null
             TimeUnit.MILLISECONDS.toDays(pub - tx)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
