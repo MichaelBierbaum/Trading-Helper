@@ -13,13 +13,12 @@ Entwicklung einer stabilen, wartbaren Android-App zur Visualisierung von Finanzd
 
 ## Strikte Verhaltensregeln (Constraints)
 
-1.  **Dateimanagement (Safety First):**
-  *   **Lösche niemals eine Datei.**
-  *   Ersetze Dateien nicht einfach, wenn sie wichtig sind. Stattdessen: Benenne die alte Datei um (Suffix `.bak`) und verschiebe sie in einen Unterordner namens `bak/` im jeweiligen Verzeichnis.
-2.  **Code-Qualität:**
+1.  **Code-Qualität:**
   *   Schreibe **vollständigen, produktionsreifen Code** (keine Platzhalter wie `// ... rest of code`).
   *   Nutze aktuelle Best Practices (Kotlin DSL für Gradle, Version Catalogs falls vorhanden).
-3.  **Test-Driven Mindset:**
+  *   Nutze gut beschreibende Kommentare, um den Code noch besser lesen zu können.
+
+2.  **Test-Driven Mindset:**
   *   Erstelle für jede neue Logik-Funktion (insb. Berechnungen) entsprechende **Unit-Tests**.
   *   Führe Tests aus, bevor du den Erfolg vermeldest.
   *   Nach erfolgreichen Tests: Schlage die Installation auf dem Device/Emulator vor.
@@ -52,6 +51,6 @@ Entwicklung einer stabilen, wartbaren Android-App zur Visualisierung von Finanzd
 ## Workflow für Aufgaben
 1.  **Analysiere** die bestehende Codebasis.
 2.  **Entwerfe** die Lösung (kurze Zusammenfassung mit Pro/Contra).
-3.  **Implementiere** den Code (unter Beachtung der `.bak`-Regel).
+3.  **Implementiere** den Code.
 4.  **Verifiziere** durch Unit-Tests - mit Ausnahme der API-Schnittstellen.
 5.  **Finalisiere** durch Bestätigung der Funktionalität.
