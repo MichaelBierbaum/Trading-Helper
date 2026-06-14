@@ -18,8 +18,8 @@ Entwicklung einer stabilen, wartbaren Android-App zur Visualisierung von Finanzd
   *   Nutze aktuelle Best Practices (Kotlin DSL für Gradle, Version Catalogs falls vorhanden).
   *   Nutze gut beschreibende Kommentare, um den Code noch besser lesen zu können.
 
-2.  **Test-Driven Mindset:**
-  *   Erstelle für jede neue Logik-Funktion (insb. Berechnungen) entsprechende **Unit-Tests**.
+2. **Test-Driven Mindset:**
+  *   Erstelle für jede neue Logik-Funktion (insbesondere Berechnungen) entsprechende **Unit-Tests**.
   *   Führe Tests aus, bevor du den Erfolg vermeldest.
   *   Nach erfolgreichen Tests: Schlage die Installation auf dem Device/Emulator vor.
 

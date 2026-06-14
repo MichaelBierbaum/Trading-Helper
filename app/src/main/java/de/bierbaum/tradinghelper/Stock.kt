@@ -83,7 +83,7 @@ data class Stock(
             val d50 = sma50DistancePercent ?: return false
             if (d50 < 0) return false
             val d200 = sma200DistancePercent ?: return false
-            return abs(d200) <= Constants.TRESHOLD_CROSS
+            return abs(d200) <= Constants.THRESHOLD_CROSS
         }
 
     val isDeathCross: Boolean
@@ -93,7 +93,7 @@ data class Stock(
             val d50 = sma50DistancePercent ?: return false
             if (d50 > 0) return false
             val d200 = sma200DistancePercent ?: return false
-            return abs(d200) <= Constants.TRESHOLD_CROSS
+            return abs(d200) <= Constants.THRESHOLD_CROSS
         }
     val getStatus: StockStatus
         get(){
@@ -105,18 +105,18 @@ data class Stock(
             val abs200 = abs(d200)
 
 
-            if (abs200 <= Constants.TRESHOLD_CROSS) return StockStatus.GoldenCross
+            if (abs200 <= Constants.THRESHOLD_CROSS) return StockStatus.GoldenCross
             if (d200 < 0.0)
             {
-                if (abs200 <= 2* Constants.TRESHOLD_CROSS) return StockStatus.Star75
-                if (abs200 <= 3* Constants.TRESHOLD_CROSS) return StockStatus.Star50
-                if (abs200 <= 4* Constants.TRESHOLD_CROSS) return StockStatus.Star25
+                if (abs200 <= 2* Constants.THRESHOLD_CROSS) return StockStatus.Star75
+                if (abs200 <= 3* Constants.THRESHOLD_CROSS) return StockStatus.Star50
+                if (abs200 <= 4* Constants.THRESHOLD_CROSS) return StockStatus.Star25
                 return StockStatus.Star00
             }
             else{ //d200 > 0.0
-                if (abs200 <= 2* Constants.TRESHOLD_CROSS) return StockStatus.StarRed25
-                if (abs200 <= 3* Constants.TRESHOLD_CROSS) return StockStatus.StarRed50
-                if (abs200 <= 4* Constants.TRESHOLD_CROSS) return StockStatus.StarRed75
+                if (abs200 <= 2* Constants.THRESHOLD_CROSS) return StockStatus.StarRed25
+                if (abs200 <= 3* Constants.THRESHOLD_CROSS) return StockStatus.StarRed50
+                if (abs200 <= 4* Constants.THRESHOLD_CROSS) return StockStatus.StarRed75
                 return StockStatus.StarRed100
             }
         }
@@ -134,20 +134,4 @@ data class Stock(
             }
         }
 
-    val rsi: Double?
-        get() {
-            if (historicalPrices.size < 15) return null
-            val changes = historicalPrices.windowed(2).map { it[1] - it[0] }
-            val gains = changes.map { if (it > 0) it else 0.0 }
-            val losses = changes.map { if (it < 0) -it else 0.0 }
-            var avgGain = gains.take(14).average()
-            var avgLoss = losses.take(14).average()
-            for (i in 14 until changes.size) {
-                avgGain = (avgGain * 13 + gains[i]) / 14
-                avgLoss = (avgLoss * 13 + losses[i]) / 14
-            }
-            if (avgLoss == 0.0) return 100.0
-            val rs = avgGain / avgLoss
-            return 100.0 - (100.0 / (1.0 + rs))
-        }
 }

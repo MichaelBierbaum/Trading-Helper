@@ -10,12 +10,8 @@ class SoundManager(private val context: Context) {
     fun playPositive() {
         try {
             posPlayer?.release()
-            // Assuming sound_kasse.mp3 is in res/raw/sound_kasse.mp3
-            val resId = context.resources.getIdentifier("sound_kasse", "raw", context.packageName)
-            if (resId != 0) {
-                posPlayer = MediaPlayer.create(context, resId)
-                posPlayer?.start()
-            }
+            posPlayer = MediaPlayer.create(context, R.raw.sound_kasse)
+            posPlayer?.start()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -24,12 +20,8 @@ class SoundManager(private val context: Context) {
     fun playNegative() {
         try {
             negPlayer?.release()
-            // Assuming sound_zonk.mp3 is in res/raw/sound_zonk.mp3
-            val resId = context.resources.getIdentifier("sound_zonk", "raw", context.packageName)
-            if (resId != 0) {
-                negPlayer = MediaPlayer.create(context, resId)
-                negPlayer?.start()
-            }
+            negPlayer = MediaPlayer.create(context, R.raw.sound_zonk)
+            negPlayer?.start()
         } catch (e: Exception) {
             e.printStackTrace()
         }

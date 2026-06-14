@@ -1,18 +1,24 @@
 package de.bierbaum.tradinghelper
 
 import android.app.Application
-import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.Serializable
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 @Serializable
 data class StockExport(
@@ -36,7 +42,6 @@ sealed interface SearchUiState {
     object Initial : SearchUiState
     object Loading : SearchUiState
     data class Success(val stocks: List<Stock>) : SearchUiState
-    data class Error(val message: String) : SearchUiState
 }
 
 enum class AppScreen {
@@ -148,12 +153,12 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
             launch {
                 while (true) {
                     val interval = _settings.value.kursIntervall
-                    delay(interval * 60 * 1000L)
+                    delay((interval * 60 * 1000L).milliseconds)
                     updateCurrentPrices()
                 }
             }
 
-            delay(2000)
+            delay(2000.milliseconds)
             _currentScreen.value = AppScreen.Watchlist
         }
     }
@@ -244,7 +249,7 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
         if (!_watchlist.value.any { it.symbol == stock.symbol }) {
             viewModelScope.launch {
                 val fullStock = repository.getYahooData(stock.symbol)?.copy(name = stock.name) ?: stock
-                _watchlist.value = _watchlist.value + fullStock
+                _watchlist.value += fullStock
                 saveWatchlist()
             }
         }
@@ -273,7 +278,7 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
                         peRatio = fmpData.peRatio,
                         averagePeLast5Years = fmpData.averagePeLast5Years,
                         nextEarningsDate = fmpData.nextEarningsDate,
-                        segments = if (it.segments.isEmpty()) fmpData.segments else it.segments
+                        segments = it.segments.ifEmpty { fmpData.segments }
                     ) else it
                 }
                 saveWatchlist()
@@ -364,7 +369,7 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
                             )
                         }
                         if (newStocks.isNotEmpty()) {
-                            _watchlist.value = _watchlist.value + newStocks
+                            _watchlist.value += newStocks
                             saveWatchlist()
                         }
                     }
@@ -432,7 +437,7 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
         if (newStock.alertPricePositive != null) {
             val alertP = newStock.alertPricePositive
             if (newStock.alertPricePositiveDirection == TouchDirection.ABOVE) {
-                if (oldPrice > alertP && newPrice <= alertP) triggerPositive = true
+                if (alertP in newPrice..<oldPrice) triggerPositive = true
             } else {
                 if (oldPrice < alertP && newPrice >= alertP) triggerPositive = true
             }
@@ -447,7 +452,7 @@ class StockSearchViewModel(application: Application) : AndroidViewModel(applicat
         if (newStock.alertPriceNegative != null) {
             val alertP = newStock.alertPriceNegative
             if (newStock.alertPriceNegativeDirection == TouchDirection.ABOVE) {
-                if (oldPrice > alertP && newPrice <= alertP) triggerNegative = true
+                if (alertP in newPrice..<oldPrice) triggerNegative = true
             } else {
                 if (oldPrice < alertP && newPrice >= alertP) triggerNegative = true
             }

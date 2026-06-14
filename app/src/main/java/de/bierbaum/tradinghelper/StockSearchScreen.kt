@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -63,18 +63,24 @@ fun StockSearchScreen(
                 .fillMaxSize()
         ) {
             SearchBar(
-                query = query,
-                onQueryChange = {
-                    query = it
-                    viewModel.searchStocks(it)
+                inputField = {
+                    SearchBarDefaults.InputField(
+                        query = query,
+                        onQueryChange = {
+                            query = it
+                            viewModel.searchStocks(it)
+                        },
+                        onSearch = {
+                            active = false
+                        },
+                        expanded = active,
+                        onExpandedChange = { active = it },
+                        placeholder = { Text(stringResource(R.string.search_hint)) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    )
                 },
-                onSearch = {
-                    active = false
-                },
-                active = active,
-                onActiveChange = { active = it },
-                placeholder = { Text(stringResource(R.string.search_hint)) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                expanded = active,
+                onExpandedChange = { active = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
@@ -125,7 +131,7 @@ fun SearchStockItem(
                 Icon(
                     imageVector = if (isInWatchlist) Icons.Default.Check else Icons.Default.Add,
                     contentDescription = if (isInWatchlist) "Hinzugefügt" else "Hinzufügen",
-                    tint = if (isInWatchlist) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                    tint = if (isInWatchlist) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                 )
             }
         }

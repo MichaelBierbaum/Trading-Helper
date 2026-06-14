@@ -1,5 +1,6 @@
 package de.bierbaum.tradinghelper
 
+import android.content.ClipData
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
@@ -31,9 +33,7 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Update
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -67,12 +67,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -91,7 +91,6 @@ fun WatchlistScreen(
     val filterTypes by viewModel.filterTypes.collectAsState()
     val filterSegments by viewModel.filterSegments.collectAsState()
     val availableSegments by viewModel.availableSegments.collectAsState()
-    val isLimitExceeded by viewModel.isApiLimitExceeded.collectAsState()
     val lastUpdateAllTime by viewModel.lastUpdateAllTime.collectAsState()
     val context = LocalContext.current
 
@@ -192,7 +191,7 @@ fun WatchlistScreen(
                         Icon(Icons.Default.FilterList, contentDescription = "Filtern")
                     }
                     IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Default.Sort, contentDescription = "Sortieren")
+                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sortieren")
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         IconButton(onClick = { viewModel.updateAllPrices() }) {
@@ -265,9 +264,7 @@ fun WatchlistScreen(
 
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(items = watchlist, key = { it.symbol }) { stock ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = { true }
-                            )
+                            val dismissState = rememberSwipeToDismissBoxState()
                             val scope = rememberCoroutineScope()
 
                             LaunchedEffect(dismissState.currentValue) {
@@ -322,7 +319,6 @@ fun WatchlistScreen(
                             ) {
                                 WatchlistItem(
                                     stock = stock,
-                                    viewModel = viewModel,
                                     onClick = {
 
                                         if (
@@ -483,7 +479,8 @@ fun SwipeBackground(
     onComment: () -> Unit,
     onCloseSwipe: () -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -496,7 +493,9 @@ fun SwipeBackground(
             Icon(Icons.Default.Close, contentDescription = "Swipe-Menü schließen", tint = MaterialTheme.colorScheme.secondary)
         }
         IconButton(onClick = { 
-            clipboardManager.setText(AnnotatedString(stock.wkn ?: ""))
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("WKN", stock.wkn ?: "")))
+            }
         }) {
             Icon(Icons.Default.ContentCopy, contentDescription = "WKN kopieren", tint = MaterialTheme.colorScheme.primary)
         }
@@ -512,7 +511,6 @@ fun SwipeBackground(
 @Composable
 fun WatchlistItem(
     stock: Stock,
-    viewModel: StockSearchViewModel,
     onClick: () -> Unit
 ) {
     Column(

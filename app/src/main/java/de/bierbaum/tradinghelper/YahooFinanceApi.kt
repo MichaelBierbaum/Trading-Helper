@@ -21,31 +21,6 @@ data class YahooQuote(
 
 
 @Serializable
-data class AssetProfile(
-    val sector: String? = null,
-    val industry: String? = null
-)
-
-
-@Serializable
-data class DoubleRaw(
-    val raw: Double,
-    val fmt: String? = null
-)
-
-@Serializable
-data class PriceData(
-    val longName: String? = null,
-    val shortName: String? = null
-)
-
-@Serializable
-data class LongRaw(
-    val raw: Long,
-    val fmt: String? = null
-)
-
-@Serializable
 data class YahooFinanceQuoteResponse(
     val quoteResponse: QuoteResponse
 )

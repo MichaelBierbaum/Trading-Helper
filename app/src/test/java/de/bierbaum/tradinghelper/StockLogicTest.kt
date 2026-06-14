@@ -1,8 +1,9 @@
 package de.bierbaum.tradinghelper
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
 
 class StockLogicTest {
 
@@ -37,7 +38,7 @@ class StockLogicTest {
 
         // Test Status
         val star75 = Stock(name = "Star", symbol = "S1", price = 85.0, sma200 = 100.0)
-        // D200 = -15% -> abs(D200) = 15%. Constants.TRESHOLD_CROSS = 10.0.
+        // D200 = -15% -> abs(D200) = 15%. Constants.THRESHOLD_CROSS = 10.0.
         // abs200 (15) <= 2 * 10 (20) -> Star75
         assertEquals(StockStatus.Star75, star75.getStatus)
         

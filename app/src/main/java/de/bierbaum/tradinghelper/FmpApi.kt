@@ -41,14 +41,6 @@ data class FmpQuoteResponse(
 )
 
 @Serializable
-data class FmpHistoricalEntry(
-    val symbol: String? = null,
-    val date: String,
-    val close: Double,
-    val adjClose: Double? = null
-)
-
-@Serializable
 data class FmpProfileResponse(
     val symbol: String,
     val sector: String? = null,
@@ -67,32 +59,6 @@ data class FmpIncomeStatement(
     val revenue: Double? = null,
     val netIncome: Double? = null,
     val eps: Double? = null
-)
-
-@Serializable
-data class FmpNewsResponse(
-    val symbol: String,
-    val publishedDate: String,
-    val title: String,
-    val image: String? = null,
-    val site: String? = null,
-    val text: String? = null,
-    val url: String? = null
-)
-
-@Serializable
-data class FmpGainerLoser(
-    val symbol: String,
-    val name: String? = null,
-    val change: Double,
-    val price: Double,
-    val changesPercentage: Double
-)
-
-@Serializable
-data class FmpSectorPerformance(
-    val sector: String,
-    val changesPercentage: String
 )
 
 @Serializable
@@ -123,14 +89,6 @@ interface FmpApi {
         @Query("symbol") symbol: String,
         @Query("apikey") apiKey: String
     ): List<FmpQuoteResponse>
-
-    //https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AAPL&apikey=...
-    @ApiErfolgreichGetestet
-    @GET("stable/historical-price-eod/full")
-    suspend fun getHistoricalPrices(
-        @Query("symbol") symbol: String,
-        @Query("apikey") apiKey: String
-    ): List<FmpHistoricalEntry>
 
     //https://financialmodelingprep.com/stable/profile?symbol=AAPL&apikey=...
     @ApiErfolgreichGetestet
