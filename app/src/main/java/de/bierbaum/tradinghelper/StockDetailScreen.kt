@@ -85,7 +85,7 @@ fun StockDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Column {
                         Text(stock?.name ?: "Details")
                         Text(
@@ -106,7 +106,7 @@ fun StockDetailScreen(
                         enabled = !apiFull
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CloudDownload, 
+                            imageVector = Icons.Default.CloudDownload,
                             contentDescription = "FMP Update",
                             tint = if (apiFull) Color.Gray else LocalContentColor.current
                         )
@@ -179,7 +179,7 @@ fun StockDetailScreen(
                         }
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 AlertSettingsCard(s, viewModel)
@@ -215,8 +215,20 @@ fun StockDetailScreen(
 
                 // Price Chart with SMAs
                 Text(text = "Kurs & SMAs (${s.currency ?: ""})", style = MaterialTheme.typography.titleMedium)
-                
+
                 var selectedTimeFrame by remember { mutableStateOf(TimeFrame.ONE_MONTH) }
+
+                // Eine Ebene höher berechnet, damit MACD- und RSI-Chart weiter unten
+                // denselben startIndex/dieselben Timestamps verwenden können und so
+                // exakt dieselbe Zeitspanne wie der Kurs-Chart zeigen.
+                val sma10Full = calculateRollingAverage(s.historicalPrices, 10)
+                val sma50Full = calculateRollingAverage(s.historicalPrices, 50)
+                val sma200Full = calculateRollingAverage(s.historicalPrices, 200)
+
+                val (filteredPrices, filteredTimestamps, startIndex) = filterDataByTimeFrame(s.historicalPrices, s.timestamps, selectedTimeFrame)
+                val filteredSma10 = sma10Full.drop(startIndex)
+                val filteredSma50 = sma50Full.drop(startIndex)
+                val filteredSma200 = sma200Full.drop(startIndex)
 
                 OutlinedCard(
                     modifier = Modifier
@@ -224,15 +236,6 @@ fun StockDetailScreen(
                         .height(350.dp)
                         .padding(vertical = 8.dp)
                 ) {
-                    val sma10Full = calculateRollingAverage(s.historicalPrices, 10)
-                    val sma50Full = calculateRollingAverage(s.historicalPrices, 50)
-                    val sma200Full = calculateRollingAverage(s.historicalPrices, 200)
-
-                    val (filteredPrices, filteredTimestamps, startIndex) = filterDataByTimeFrame(s.historicalPrices, s.timestamps, selectedTimeFrame)
-                    val filteredSma10 = sma10Full.drop(startIndex)
-                    val filteredSma50 = sma50Full.drop(startIndex)
-                    val filteredSma200 = sma200Full.drop(startIndex)
-
                     Column(modifier = Modifier.padding(16.dp)) {
                         StockChart(
                             prices = filteredPrices,
@@ -250,7 +253,7 @@ fun StockDetailScreen(
                         ChartLegend()
                     }
                 }
-                
+
                 TimeFrameSelector(
                     selectedTimeFrame = selectedTimeFrame,
                     onTimeFrameSelected = { selectedTimeFrame = it }
@@ -267,7 +270,10 @@ fun StockDetailScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     MacdChart(
-                        prices = s.historicalPrices,
+                        fullPrices = s.historicalPrices,
+                        startIndex = startIndex,
+                        timestamps = filteredTimestamps,
+                        timeFrame = selectedTimeFrame,
                         modifier = Modifier.fillMaxSize().padding(16.dp)
                     )
                 }
@@ -288,7 +294,10 @@ fun StockDetailScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     RsiChart(
-                        prices = s.historicalPrices,
+                        fullPrices = s.historicalPrices,
+                        startIndex = startIndex,
+                        timestamps = filteredTimestamps,
+                        timeFrame = selectedTimeFrame,
                         modifier = Modifier.fillMaxSize().padding(16.dp)
                     )
                 }
@@ -381,7 +390,7 @@ fun AlertConfigContent(stock: Stock, isPositive: Boolean, viewModel: StockSearch
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
         Text("Preis-Trigger:", style = MaterialTheme.typography.labelSmall)
         OutlinedTextField(
@@ -543,7 +552,7 @@ fun StockChart(
             val x = getX(idx)
             val timestamp = timestamps[idx]
             val dateStr = timeFormatter.format(Date(timestamp * 1000))
-            
+
             drawText(
                 textMeasurer = textMeasurer,
                 text = dateStr,
@@ -598,7 +607,7 @@ fun StockChart(
                 // Highlighting Labels
                 val timeFullFormatter = SimpleDateFormat("dd.MM. HH:mm", Locale.GERMANY)
                 val timeStr = timeFullFormatter.format(Date(timestamp * 1000))
-                
+
                 // Bottom Time Highlight
                 drawRect(colorCrosshair, topLeft = Offset(x - 40f, chartHeight), size = androidx.compose.ui.geometry.Size(80f, xLabelHeightPx))
                 drawText(textMeasurer, timeStr, topLeft = Offset(x - 38f, chartHeight + 2f), style = highlightLabelStyle.copy(color = Color.Black))
@@ -612,7 +621,7 @@ fun StockChart(
                     leftLabelHeightPx
                 ))
                 drawText(textMeasurer, String.format(Locale.GERMANY, "%.2f", price), topLeft = Offset(size.width - rightLabelWidthPx + 5f, y - 10f), style = highlightLabelStyle.copy(color = Color.Black))
-                
+
                 // Circle around Datapoint at line
                 drawCircle(colorCrosshair, radius = 4.dp.toPx(), center = Offset(x, y))
             }
@@ -634,54 +643,183 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSmaPath(smaValu
 }
 
 @Composable
-fun MacdChart(prices: List<Double>, modifier: Modifier = Modifier) {
-    if (prices.size < 26) return
-    val ema12 = calculateEma(prices, 12); val ema26 = calculateEma(prices, 26)
+fun MacdChart(
+    fullPrices: List<Double>,
+    startIndex: Int,
+    timestamps: List<Long>,
+    timeFrame: TimeFrame,
+    modifier: Modifier = Modifier
+) {
+    if (fullPrices.size < 26) return
+
+    // MACD wird auf der GESAMTEN Historie berechnet (EMA braucht Vorlauf, um
+    // "eingeschwungen" zu sein), und erst danach auf den ausgewählten Zeitraum
+    // zugeschnitten - mit demselben startIndex wie der Kurs-Chart, damit beide
+    // exakt dieselbe Zeitspanne zeigen.
+    val ema12 = calculateEma(fullPrices, 12)
+    val ema26 = calculateEma(fullPrices, 26)
     val macdLineFull = ema12.zip(ema26) { e12, e26 -> e12 - e26 }
     val signalLineFull = calculateEma(macdLineFull, 9)
-    
-    // Zoom in: nur die letzten x Tage anzeigen
-    val countDays = Constants.COUNT_DAYS_CHART
-    val macdLine = macdLineFull.takeLast(countDays)
-    val signalLine = signalLineFull.takeLast(countDays)
-    
+
+    val macdLine = macdLineFull.drop(startIndex)
+    val signalLine = signalLineFull.drop(startIndex)
+
+    if (macdLine.size < 2 || timestamps.size < 2) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text("Nicht genügend Daten", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+        }
+        return
+    }
+
     val allValues = macdLine + signalLine
-    val minVal = allValues.minOrNull() ?: -1.0; val maxVal = allValues.maxOrNull() ?: 1.0; val range = (maxVal - minVal).coerceAtLeast(0.0001)
+    val minVal = allValues.minOrNull() ?: -1.0
+    val maxVal = allValues.maxOrNull() ?: 1.0
+    val range = (maxVal - minVal).coerceAtLeast(0.0001)
+
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color.White)
+
+    val rightLabelWidthPx = with(density) { 55.dp.toPx() }
+    val xLabelHeightPx = with(density) { 18.dp.toPx() }
 
     Canvas(modifier = modifier) {
-        val width = size.width; val height = size.height
-        fun getY(value: Double): Float = (height - ((value - minVal) / range) * height).toFloat()
-        fun getX(index: Int): Float = if (macdLine.size > 1) index * (width / (macdLine.size - 1)) else width / 2
+        val chartWidth = size.width - rightLabelWidthPx
+        val chartHeight = size.height - xLabelHeightPx
+
+        fun getY(value: Double): Float = (chartHeight - ((value - minVal) / range) * chartHeight).toFloat()
+        fun getX(index: Int): Float = if (macdLine.size > 1) index * (chartWidth / (macdLine.size - 1)) else chartWidth / 2
+
+        // Y-Achse: 3 Referenzwerte (max, 0-Linie, min)
+        val yLabelCount = 3
+        for (i in 0 until yLabelCount) {
+            val value = maxVal - (range / (yLabelCount - 1) * i)
+            val y = getY(value)
+            drawLine(
+                color = Color.LightGray.copy(alpha = 0.2f),
+                start = Offset(0f, y),
+                end = Offset(chartWidth, y),
+                strokeWidth = 1f
+            )
+            drawText(
+                textMeasurer = textMeasurer,
+                text = String.format(Locale.GERMANY, "%.2f", value),
+                topLeft = Offset(chartWidth + 5f, y - 8f),
+                style = labelStyle
+            )
+        }
+
+        // X-Achse: gleiche Logik/Formatierung wie der Kurs-Chart, damit beide
+        // Charts an denselben Zeitpunkten beschriftet sind.
+        val xLabelCount = 4
+        val timeFormatter = when (timeFrame) {
+            TimeFrame.ONE_DAY, TimeFrame.THREE_DAYS -> SimpleDateFormat("HH:mm", Locale.GERMANY)
+            else -> SimpleDateFormat("dd.MM.", Locale.GERMANY)
+        }
+        for (i in 0 until xLabelCount) {
+            val idx = (i * (macdLine.size - 1) / (xLabelCount - 1)).coerceIn(0, macdLine.size - 1)
+            val x = getX(idx)
+            val timestampIdx = idx.coerceIn(0, timestamps.size - 1)
+            val dateStr = timeFormatter.format(Date(timestamps[timestampIdx] * 1000))
+            drawText(
+                textMeasurer = textMeasurer,
+                text = dateStr,
+                topLeft = Offset((x - 20f).coerceAtLeast(0f), chartHeight + 4f),
+                style = labelStyle
+            )
+        }
+
         val zeroY = getY(0.0)
-        drawLine(Color.Gray, start = Offset(0f, zeroY), end = Offset(width, zeroY))
+        drawLine(Color.Gray, start = Offset(0f, zeroY), end = Offset(chartWidth, zeroY))
         drawMacdPath(macdLine, Color.Blue, 2f, ::getX, ::getY)
         drawMacdPath(signalLine, Color(0xFFFFA500), 2f, ::getX, ::getY)
     }
 }
 
 @Composable
-fun RsiChart(prices: List<Double>, modifier: Modifier = Modifier) {
-    if (prices.size < 15) return
+fun RsiChart(
+    fullPrices: List<Double>,
+    startIndex: Int,
+    timestamps: List<Long>,
+    timeFrame: TimeFrame,
+    modifier: Modifier = Modifier
+) {
+    if (fullPrices.size < 15) return
+
+    // rsiValuesFull[0] entspricht fullPrices[14] (RSI braucht 14 Tage Vorlauf),
+    // d.h. der Index-Offset zwischen RSI-Liste und Preisliste ist 14.
+    val rsiOffset = 14
     val rsiValuesFull = mutableListOf<Double>()
-    for (i in 14..prices.size) {
-        val subList = prices.take(i)
+    for (i in (rsiOffset + 1)..fullPrices.size) {
+        val subList = fullPrices.take(i)
         calculateRsiValue(subList)?.let { rsiValuesFull.add(it) }
     }
-    
-    // Zoom in: nur die letzten x Tage anzeigen
-    val countDays = Constants.COUNT_DAYS_CHART
-    val rsiValues = rsiValuesFull.takeLast(countDays)
-    
-    if (rsiValues.isEmpty()) return
+
+    // Denselben startIndex wie der Kurs-Chart verwenden, korrigiert um den Offset,
+    // damit RSI exakt dieselbe Zeitspanne abdeckt wie Kurs- und MACD-Chart.
+    val rsiStartIndex = (startIndex - rsiOffset).coerceAtLeast(0)
+    val rsiValues = rsiValuesFull.drop(rsiStartIndex)
+
+    if (rsiValues.size < 2 || timestamps.size < 2) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text("Nicht genügend Daten", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+        }
+        return
+    }
+
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color.White)
+
+    val rightLabelWidthPx = with(density) { 55.dp.toPx() }
+    val xLabelHeightPx = with(density) { 18.dp.toPx() }
 
     Canvas(modifier = modifier) {
-        val width = size.width; val height = size.height
-        fun getY(value: Double): Float = (height - (value / 100.0) * height).toFloat()
-        fun getX(index: Int): Float = if (rsiValues.size > 1) index * (width / (rsiValues.size - 1)) else width / 2
-        
-        drawLine(Color.Red.copy(alpha = 0.5f), start = Offset(0f, getY(70.0)), end = Offset(width, getY(70.0)), strokeWidth = 2f)
-        drawLine(Color.Green.copy(alpha = 0.5f), start = Offset(0f, getY(30.0)), end = Offset(width, getY(30.0)), strokeWidth = 2f)
-        
+        val chartWidth = size.width - rightLabelWidthPx
+        val chartHeight = size.height - xLabelHeightPx
+
+        fun getY(value: Double): Float = (chartHeight - (value / 100.0) * chartHeight).toFloat()
+        fun getX(index: Int): Float = if (rsiValues.size > 1) index * (chartWidth / (rsiValues.size - 1)) else chartWidth / 2
+
+        // Y-Achse: feste RSI-Referenzwerte
+        listOf(0.0, 30.0, 50.0, 70.0, 100.0).forEach { value ->
+            val y = getY(value)
+            drawLine(
+                color = Color.LightGray.copy(alpha = 0.2f),
+                start = Offset(0f, y),
+                end = Offset(chartWidth, y),
+                strokeWidth = 1f
+            )
+            drawText(
+                textMeasurer = textMeasurer,
+                text = value.toInt().toString(),
+                topLeft = Offset(chartWidth + 5f, y - 8f),
+                style = labelStyle
+            )
+        }
+
+        // X-Achse: gleiche Logik/Formatierung wie Kurs- und MACD-Chart.
+        val xLabelCount = 4
+        val timeFormatter = when (timeFrame) {
+            TimeFrame.ONE_DAY, TimeFrame.THREE_DAYS -> SimpleDateFormat("HH:mm", Locale.GERMANY)
+            else -> SimpleDateFormat("dd.MM.", Locale.GERMANY)
+        }
+        for (i in 0 until xLabelCount) {
+            val idx = (i * (rsiValues.size - 1) / (xLabelCount - 1)).coerceIn(0, rsiValues.size - 1)
+            val x = getX(idx)
+            val timestampIdx = idx.coerceIn(0, timestamps.size - 1)
+            val dateStr = timeFormatter.format(Date(timestamps[timestampIdx] * 1000))
+            drawText(
+                textMeasurer = textMeasurer,
+                text = dateStr,
+                topLeft = Offset((x - 20f).coerceAtLeast(0f), chartHeight + 4f),
+                style = labelStyle
+            )
+        }
+
+        drawLine(Color.Red.copy(alpha = 0.5f), start = Offset(0f, getY(70.0)), end = Offset(chartWidth, getY(70.0)), strokeWidth = 2f)
+        drawLine(Color.Green.copy(alpha = 0.5f), start = Offset(0f, getY(30.0)), end = Offset(chartWidth, getY(30.0)), strokeWidth = 2f)
+
         val path = Path()
         rsiValues.forEachIndexed { index, rsi ->
             val x = getX(index); val y = getY(rsi)
@@ -809,10 +947,10 @@ fun filterDataByTimeFrame(
     timeFrame: TimeFrame
 ): Triple<List<Double>, List<Long>, Int> {
     if (prices.isEmpty()) return Triple(emptyList(), emptyList(), 0)
-    
+
     val now = (timestamps.lastOrNull() ?: (System.currentTimeMillis() / 1000))
     val secondsInDay = 86400L
-    
+
     val cutoff = when (timeFrame) {
         TimeFrame.ONE_DAY -> now - secondsInDay
         TimeFrame.THREE_DAYS -> now - (3 * secondsInDay)
@@ -831,10 +969,10 @@ fun filterDataByTimeFrame(
         TimeFrame.THREE_YEARS -> now - (3 * 365 * secondsInDay)
         TimeFrame.MAX -> 0L
     }
-    
+
     var index = timestamps.indexOfFirst { it >= cutoff }
     if (index == -1) index = 0
-    
+
     return Triple(prices.drop(index), timestamps.drop(index), index)
 }
 
