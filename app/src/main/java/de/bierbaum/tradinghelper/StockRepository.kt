@@ -80,7 +80,7 @@ class StockRepository {
     // wie die BFF-Domain selbst, nicht die Marketing-Domain www.capitoltrades.com).
     private val capitolHttpClient = OkHttpClient.Builder()
         .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY // TODO: nach erfolgreichem Test zurück auf BASIC
+            level = HttpLoggingInterceptor.Level.BASIC // BODY: ausgiebiges Logging
         })
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
