@@ -17,8 +17,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,6 +52,7 @@ fun CapitolTradesScreen(
 ) {
     val trades by viewModel.trades.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.loadTrades()
@@ -71,14 +74,75 @@ fun CapitolTradesScreen(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else {
-            LazyColumn(
+        } else if (errorMessage != null && trades.isEmpty()) {
+            // Kein Crash, keine stille leere Liste: klarer Hinweis + Retry, wenn der
+            // Fehler (z.B. 503 beim Anbieter) nicht an unserem Code liegt.
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                items(trades) { scoredTrade ->
-                    TradeItemRow(scoredTrade, onAddStock)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = errorMessage ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.loadTrades() }) {
+                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Erneut versuchen")
+                    }
+                }
+            }
+        } else {
+            Column(modifier = Modifier.padding(innerPadding)) {
+                if (errorMessage != null) {
+                    // Es gibt noch Daten vom letzten erfolgreichen Laden, aber der
+                    // letzte Refresh ist fehlgeschlagen — Banner statt Vollbild-Fehler.
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = errorMessage ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { viewModel.loadTrades() }) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Erneut versuchen",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(trades) { scoredTrade ->
+                        TradeItemRow(scoredTrade, onAddStock)
+                    }
                 }
             }
         }
@@ -111,7 +175,7 @@ fun TradeItemRow(scoredTrade: ScoredTrade, onAddStock: (Stock) -> Unit) {
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
-                
+
                 ScoreBadge(scoredTrade.score)
             }
 
@@ -121,7 +185,7 @@ fun TradeItemRow(scoredTrade: ScoredTrade, onAddStock: (Stock) -> Unit) {
                 Icon(Icons.Default.Person, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(text = trade.politician.fullName, style = MaterialTheme.typography.bodyMedium)
-                
+
                 if (scoredTrade.isCluster) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
